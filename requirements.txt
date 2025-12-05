@@ -22,7 +22,12 @@ tqdm>=4.66.1
 numpy>=1.26.3
 pandas>=2.2.0
 requests>=2.31.0
-
+unstructured>=0.18.0
+langchain-openai>=1.1.0
+tiktoken>=0.12.0
+langchain-chroma>=0.1.0
+langchain-community>=0.0.20
+ollama>=0.1.0   # 如果你使用 Ollama，本条可选
 # 可选：使用其他向量数据库
 # faiss-cpu>=1.7.4
 # pinecone-client>=3.0.0
