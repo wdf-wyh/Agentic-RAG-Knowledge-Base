@@ -1,0 +1,28 @@
+# 核心依赖
+langchain>=0.1.0
+langchain-community>=0.0.20
+openai>=1.12.0
+chromadb>=0.4.22
+sentence-transformers>=2.3.1
+
+# 文档处理
+pypdf>=4.0.0
+python-docx>=1.1.0
+openpyxl>=3.1.2
+beautifulsoup4>=4.12.3
+markdown>=3.5.2
+
+# Web 界面
+streamlit>=1.31.0
+gradio>=4.19.0
+
+# 工具库
+python-dotenv>=1.0.1
+tqdm>=4.66.1
+numpy>=1.26.3
+pandas>=2.2.0
+requests>=2.31.0
+
+# 可选：使用其他向量数据库
+# faiss-cpu>=1.7.4
+# pinecone-client>=3.0.0
