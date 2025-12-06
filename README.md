@@ -104,14 +104,20 @@ streamlit run app.py
 # 构建知识库
 python main.py build --documents ./documents
 
-# 查询问题
+# 使用 OpenAI 查询（默认）
 python main.py query --question "什么是机器学习？"
-python main.py ollama --prompt "用中文写一段 50 字以内的鼓励话语。"
-source .venv/bin/activate && python main.py query --question "什么是机器学习？" --pr
-ovider ollama --ollama-model gemma3:4b
-# 启动对话模式
+
+# 使用 Ollama 本地模型查询
+python main.py query --question "什么是机器学习？" --provider ollama --ollama-model gemma3:4b
+
+# 使用 Gemini 查询
+python main.py query --question "什么是机器学习？" --provider gemini
+
+# 启动对话模式（使用默认提供者）
 python main.py chat
-source .venv/bin/activate && python main.py chat --provider ollama --ollama-model gemma3:4b
+
+# 启动对话模式（使用 Ollama）
+python main.py chat --provider ollama --ollama-model gemma3:4b
 ```
 
 ### Python 代码示例
@@ -172,8 +178,10 @@ print(result["answer"])
 | `TEMPERATURE` | 生成温度 | 0.7 |
 | `MAX_TOKENS` | 最大生成长度 | 1000 |
 
-| `MODEL_PROVIDER` | 模型提供者，选择 `openai` 或 `gemini` | openai |
+| `MODEL_PROVIDER` | 模型提供者，选择 `openai`、`gemini` 或 `ollama` | openai |
 | `GEMINI_API_KEY` | Google Gemini (或其他 Gemini 兼容服务) 的 API Key | 可选，若使用 `gemini` 必填 |
+| `OLLAMA_MODEL` | Ollama 本地模型名称 | gemma3:4b |
+| `OLLAMA_API_URL` | Ollama API 地址 | http://localhost:11434 |
 
 ## 🎯 应用场景
 

@@ -13,9 +13,11 @@ class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
     
-    # 支持多个模型提供者，例如 'openai' 或 'gemini'
+    # 支持多个模型提供者，例如 'openai'、'gemini' 或 'ollama'
     # 优先使用显式的 MODEL_PROVIDER；若未设置，则根据可用的 API key 自动检测
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+    OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
     _raw_provider = os.getenv("MODEL_PROVIDER", "").strip().lower()
     if _raw_provider:
         MODEL_PROVIDER = _raw_provider
@@ -51,6 +53,10 @@ class Config:
         elif cls.MODEL_PROVIDER == "gemini":
             if not cls.GEMINI_API_KEY:
                 raise ValueError("GEMINI_API_KEY 未设置，请在 .env 文件中配置")
+        elif cls.MODEL_PROVIDER == "ollama":
+            # Ollama 不需要 API key，但可以验证模型名称
+            if not cls.OLLAMA_MODEL:
+                raise ValueError("OLLAMA_MODEL 未设置，请在 .env 文件中配置")
         else:
             raise ValueError(f"不支持的 MODEL_PROVIDER: {cls.MODEL_PROVIDER}")
         return True
