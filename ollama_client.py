@@ -1,6 +1,6 @@
 import requests
 import json
-from typing import Optional
+from typing import Optional, Iterator
 
 
 class OllamaError(Exception):
@@ -13,6 +13,7 @@ def generate(
     max_tokens: int = 256,
     temperature: float = 0.7,
     api_url: Optional[str] = None,
+    stream: bool = False,
 ):
     """调用本地 Ollama HTTP API 进行文本生成。
 
@@ -22,9 +23,10 @@ def generate(
         max_tokens: 最大生成 token 数。
         temperature: 温度参数。
         api_url: 可选的 Ollama 服务地址，默认 `http://localhost:11434`。
+        stream: 是否使用流式输出。
 
     Returns:
-        生成的文本字符串。
+        生成的文本字符串或流迭代器。
     """
     if api_url is None:
         api_url = "http://localhost:11434"
@@ -36,22 +38,40 @@ def generate(
         "prompt": prompt,
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "stream": False,  # 关键：禁用流式输出，获取完整响应
+        "stream": stream,
     }
 
     try:
-        resp = requests.post(endpoint, json=payload, timeout=120)
+        resp = requests.post(endpoint, json=payload, timeout=120, stream=stream)
     except requests.RequestException as e:
         raise OllamaError(f"请求 Ollama API 失败: {e}")
 
     if resp.status_code != 200:
         raise OllamaError(f"Ollama API 返回错误: {resp.status_code} {resp.text}")
 
+    if stream:
+        return _generate_stream(resp)
+    else:
+        return _generate_non_stream(resp)
+
+
+def _generate_stream(resp):
+    """处理流式响应"""
+    try:
+        for line in resp.iter_lines():
+            if line:
+                chunk = json.loads(line)
+                if "response" in chunk:
+                    yield chunk["response"]
+    except json.JSONDecodeError as e:
+        raise OllamaError(f"解析 Ollama 响应失败: {e}")
+
+
+def _generate_non_stream(resp) -> str:
+    """处理非流式响应，返回完整字符串"""
     try:
         data = resp.json()
-        
-        # Ollama 的标准响应字段是 'response'
-        if isinstance(data, dict) and "response" in data:
+        if "response" in data:
             response_text = data.get("response", "")
             if isinstance(response_text, str):
                 # 尝试从响应中解析 JSON 格式的答案
@@ -74,20 +94,16 @@ def generate(
                     # 如果不是有效的 JSON，直接返回原文本
                     pass
                 return response_text
-        
-        # 备用方案：如果没有 'response' 字段，尝试其他常见字段
-        if isinstance(data, dict):
-            for field in ["answer", "text", "result", "content"]:
-                if field in data and isinstance(data[field], str):
-                    field_text = data[field].strip()
-                    return field_text
-        
-        # 最后的备用：返回整个响应的字符串化版本
-        return str(data).strip()
-        
-    except (ValueError, json.JSONDecodeError) as e:
-        # 如果 JSON 解析失败，尝试返回原始文本
-        text = resp.text.strip()
-        if text:
-            return text
-        raise OllamaError(f"无法解析 Ollama 响应: {e}")
+        else:
+            # 备用方案：如果没有 'response' 字段，尝试其他常见字段
+            if isinstance(data, dict):
+                for field in ["answer", "text", "result", "content"]:
+                    if field in data and isinstance(data[field], str):
+                        field_text = data[field].strip()
+                        return field_text
+            # 最后的备用：返回整个响应的字符串化版本
+            return str(data).strip()
+            
+    except json.JSONDecodeError as e:
+        raise OllamaError(f"解析 Ollama 响应失败: {e}")
+
