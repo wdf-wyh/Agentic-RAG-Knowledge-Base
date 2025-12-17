@@ -67,11 +67,11 @@ def query_knowledge_base(question: str, provider: str = None, ollama_model: str 
                     contexts.append(str(doc))
 
             context_text = "\n\n".join(contexts)
-            # 强制模型以 JSON 格式输出，便于精确解析：{"answer":"..."}
+            # 要求模型以纯文本回答（不要输出 JSON、代码块或额外注释）
             prompt = (
-                "请只返回一个 JSON 对象，格式为 {\"answer\": \"...\"}，其中 answer 是一段完整、连贯的中文回答。不要输出其他文本或解释。\n"
+                "请基于下面的上下文，用完整、连贯的中文回答用户的问题。只输出回答的纯文本，不要包含任何 JSON 对象、代码块、注释或额外说明。\n"
                 + f"基于以下上下文回答问题:\n{context_text}\n\n问题: {question}\n\n"
-                + "回答示例：{\"answer\": \"这是示例答案\"}\n"
+                + "回答示例：这是示例答案\n"
             )
 
             model_name = ollama_model or "gemma3:4b"
@@ -127,14 +127,12 @@ def query_knowledge_base(question: str, provider: str = None, ollama_model: str 
                 fragile = True
 
             if fragile:
-                # 尝试最多 2 次，要求输出为有效的 JSON 对象 {"answer":"..."}
-                import json as _json
+                # 尝试最多 2 次，请模型把碎片化或不完整的回答改写为完整的纯文本回答
                 success = False
                 for attempt in range(2):
                     try:
                         rewrite_prompt = (
-                            "请只返回一个有效的 JSON 对象，且仅输出该对象，格式为 {\"answer\": \"...\"}。不要包含代码块、注释或其他文本。"
-                            + "\n将下面的文本改写为一段完整、连贯的中文句子，并作为 answer 字段的值：\n"
+                            "请将下面的文本改写为一段完整、连贯的中文回答。只输出纯文本，不要包含 JSON、代码块或额外注释：\n"
                             + ans
                         )
 
@@ -146,25 +144,8 @@ def query_knowledge_base(question: str, provider: str = None, ollama_model: str 
                             api_url=api_url,
                         )
 
-                        # 从返回文本中抽取第一个 JSON 对象并解析
-                        m = None
-                        try:
-                            import re as _re
-                            js = _re.search(r"\{[\s\S]*\}", rewritten)
-                            if js:
-                                cand = js.group(0)
-                                obj = _json.loads(cand)
-                                if isinstance(obj, dict) and "answer" in obj and isinstance(obj["answer"], str):
-                                    result['answer'] = obj['answer'].strip()
-                                    success = True
-                                    print('\n（已通过 JSON 重写获得更完整的答案）')
-                                    break
-                        except Exception:
-                            # 若解析失败，则将 rewritten 作为候选继续下一次尝试
-                            pass
-
-                        # 若没找到 JSON，但 rewritten 看起来更长且合理，则也可以采用它作为回退
-                        if not success and rewritten and len(rewritten) > len(ans) and 'json' not in rewritten.lower():
+                        if rewritten and len(rewritten.strip()) > 0:
+                            # 直接采用改写后的纯文本作为答案
                             result['answer'] = rewritten.strip()
                             success = True
                             print('\n（已对模型输出进行了后处理改写，采用纯文本结果）')

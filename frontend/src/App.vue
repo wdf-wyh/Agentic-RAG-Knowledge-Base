@@ -4,33 +4,42 @@
     <header class="app-header">
       <div class="header-content">
         <div class="logo-section">
-          <div class="logo-icon">📚</div>
+          <!-- <div class="logo-icon">📚</div> -->
           <div class="logo-text">
-            <h1>RAG 知识库</h1>
+            <h1>智慧食堂 知识库</h1>
             <p>智能知识检索助手</p>
           </div>
         </div>
         <div class="header-stats">
           <div class="stat-item">
-            <span class="stat-label">状态</span>
-            <span :class="['stat-value', status.vector_store_loaded ? 'loaded' : 'unloaded']">
+            <!-- <span class="stat-label">状态</span> -->
+            <!-- <span :class="['stat-value', status.vector_store_loaded ? 'loaded' : 'unloaded']">
               {{ status.vector_store_loaded ? '✓ 已加载' : '✗ 未加载' }}
-            </span>
+            </span> -->
           </div>
           <el-button
             type="primary"
+            @click="kbVisible = true"
+            class="mr-2"
+          >
+            知识库
+          </el-button>
+
+          <el-button
+            type="primary"
             :icon="Setting"
-            circle
             @click="settingsVisible = true"
-          />
+          >
+            模型设置
+          </el-button>
         </div>
       </div>
     </header>
 
     <!-- 主容器 -->
     <div class="main-container">
-      <!-- 左侧边栏 - 文件上传和知识库构建 -->
-      <aside class="sidebar">
+      <!-- 知识库抽屉（包含上传与构建） -->
+      <el-drawer v-model="kbVisible" title="知识库管理" size="35%">
         <div class="sidebar-content">
           <div class="sidebar-section">
             <h3 class="section-title">📤 上传文档</h3>
@@ -43,12 +52,12 @@
                 @change="handleFileSelect"
                 accept=".md,.pdf,.docx,.txt"
               />
-              <div class="upload-box" @click="triggerFileInput">
+              <div class="upload-box" ref="uploadBox" @click="triggerFileInput">
                 <div class="upload-icon">📎</div>
                 <p>点击选择或拖拽文件</p>
                 <span class="upload-hint">支持 MD、PDF、DOCX、TXT</span>
               </div>
-              
+
               <!-- 已上传文件列表 -->
               <div v-if="uploadedFiles.length > 0" class="uploaded-files">
                 <div v-for="(file, idx) in uploadedFiles" :key="idx" class="file-item">
@@ -91,13 +100,13 @@
             </div>
           </div>
         </div>
-      </aside>
+      </el-drawer>
 
       <!-- 主聊天区域 -->
       <main class="chat-area">
         <div class="messages-container">
           <div v-if="messages.length === 0" class="empty-state">
-            <div class="empty-icon">🤖</div>
+            <!-- <div class="empty-icon">🤖</div> -->
             <h2>开始提问吧</h2>
             <p>上传文档并构建知识库后，您可以提出相关问题</p>
           </div>
@@ -249,6 +258,7 @@ export default {
       messages: [],
       status: { vector_store_loaded: false },
       settingsVisible: false,
+      kbVisible: false,
       messageLoading: false,
       
       // 模型配置
@@ -299,11 +309,35 @@ export default {
     }
     
     // 支持拖拽上传
+    // 延迟到抽屉打开时设置拖拽（也在 mounted 时尝试一次以防抽屉默认打开）
     this.setupDragDrop()
   },
   beforeUnmount() {
     if (this.progressInterval) {
       clearInterval(this.progressInterval)
+    }
+    // 移除拖拽监听器
+    const uploadBox = this.$refs.uploadBox || document.querySelector('.upload-box')
+    if (uploadBox) {
+      uploadBox.removeEventListener && uploadBox.removeEventListener('dragover', this._dragOverHandler)
+      uploadBox.removeEventListener && uploadBox.removeEventListener('dragleave', this._dragLeaveHandler)
+      uploadBox.removeEventListener && uploadBox.removeEventListener('drop', this._dropHandler)
+    }
+  },
+  watch: {
+    kbVisible(val) {
+      if (val) {
+        // 当抽屉打开时，确保拖拽区域绑定事件
+        this.$nextTick(() => this.setupDragDrop())
+      } else {
+        // 抽屉关闭时移除监听
+        const uploadBox = this.$refs.uploadBox || document.querySelector('.upload-box')
+        if (uploadBox) {
+          uploadBox.removeEventListener && uploadBox.removeEventListener('dragover', this._dragOverHandler)
+          uploadBox.removeEventListener && uploadBox.removeEventListener('dragleave', this._dragLeaveHandler)
+          uploadBox.removeEventListener && uploadBox.removeEventListener('drop', this._dropHandler)
+        }
+      }
     }
   },
   methods: {
@@ -333,27 +367,31 @@ export default {
       }
     },
     setupDragDrop() {
-      const uploadBox = document.querySelector('.upload-box')
+      const uploadBox = this.$refs.uploadBox || document.querySelector('.upload-box')
       if (!uploadBox) return
-      
-      uploadBox.addEventListener('dragover', (e) => {
+
+      // 为避免重复绑定，先移除可能存在的监听器（简单做法）
+      uploadBox.removeEventListener && uploadBox.removeEventListener('dragover', this._dragOverHandler)
+
+      this._dragOverHandler = (e) => {
         e.preventDefault()
         uploadBox.classList.add('dragover')
-      })
-      
-      uploadBox.addEventListener('dragleave', () => {
-        uploadBox.classList.remove('dragover')
-      })
-      
-      uploadBox.addEventListener('drop', async (e) => {
+      }
+
+      this._dragLeaveHandler = () => uploadBox.classList.remove('dragover')
+
+      this._dropHandler = async (e) => {
         e.preventDefault()
         uploadBox.classList.remove('dragover')
-        
         const files = e.dataTransfer.files
         for (let file of files) {
           await this.uploadFile(file)
         }
-      })
+      }
+
+      uploadBox.addEventListener('dragover', this._dragOverHandler)
+      uploadBox.addEventListener('dragleave', this._dragLeaveHandler)
+      uploadBox.addEventListener('drop', this._dropHandler)
     },
     triggerFileInput() {
       this.$refs.fileInput.click()
