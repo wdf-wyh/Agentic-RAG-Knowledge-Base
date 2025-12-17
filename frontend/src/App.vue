@@ -118,7 +118,7 @@
                 <!-- 支持逐字显示效果 -->
                 <p v-if="msg.role === 'assistant' && idx === messages.length - 1 && !msg.finished">
                   {{ formatContent(msg.content) }}
-                  <span class="cursor">|</span>
+                  <span class="spinner" role="status" aria-label="加载中"></span>
                 </p>
                 <p v-else>{{ formatContent(msg.content) }}</p>
 
@@ -179,7 +179,7 @@
                 v-model="question"
                 type="textarea"
                 :rows="3"
-                placeholder="输入您的问题... (Shift+Enter 发送)"
+                placeholder="输入您的问题... "
                 class="chat-input"
                 @keydown="handleInputKeydown"
                 @paste="handlePaste"
@@ -506,7 +506,7 @@ export default {
       }
     },
     handleInputKeydown(e) {
-      if (e.key === 'Enter' && e.shiftKey) {
+      if (e.key === 'Enter' ) {
         e.preventDefault()
         this.sendQuestion()
       }
@@ -663,33 +663,56 @@ export default {
     formatContent(raw) {
       if (!raw || typeof raw !== 'string') return raw
 
-      // 尝试解析像 {"answer":"..."} 或其他简单 JSON 包裹的字符串
       const trimmed = raw.trim()
-      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+
+      const tryParse = (str) => {
         try {
-          const parsed = JSON.parse(trimmed)
-          // 如果是对象并且含有 answer 字段，取 answer
+          const parsed = JSON.parse(str)
           if (parsed && typeof parsed === 'object') {
-            if (typeof parsed.answer === 'string' && parsed.answer.trim().length > 0) {
-              return parsed.answer
-            }
-            // 如果有 fields 里的 text-like 字段，优先返回其第一个可用字符串
+            if (typeof parsed.answer === 'string' && parsed.answer.trim().length > 0) return parsed.answer
             for (const key of Object.keys(parsed)) {
               const v = parsed[key]
               if (typeof v === 'string' && v.trim().length > 0) return v
             }
+            return JSON.stringify(parsed)
           }
+          if (typeof parsed === 'string') return parsed
+          return String(parsed)
         } catch (e) {
-          // 不是合法 JSON，继续下面的纯文本处理
+          return null
         }
       }
 
-      // 有些返回值像 '"文本"'（带多余引号），去掉外层引号
+      // 1) 直接尝试解析为 JSON
+      let out = tryParse(trimmed)
+      if (out !== null) return out
+
+      // 2) 如果外层被引号包裹，去掉引号后再尝试解析或返回内部内容
       if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-        return trimmed.slice(1, -1)
+        const inner = trimmed.slice(1, -1)
+        out = tryParse(inner)
+        if (out !== null) return out
+
+        // 尝试去掉常见的转义再解析
+        try {
+          const unescaped = inner.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+          out = tryParse(unescaped)
+          if (out !== null) return out
+        } catch (e) {
+          // ignore
+        }
+
+        return inner
       }
 
-      // 否则返回原始文本
+      // 3) 如果文本中包含 JSON 子串，尝试提取并解析第一个花括号块
+      const jsonMatch = trimmed.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        out = tryParse(jsonMatch[0])
+        if (out !== null) return out
+      }
+
+      // 否则按原样返回
       return raw
     }
   }
@@ -698,4 +721,28 @@ export default {
 
 <style scoped>
 @import './styles.css';
+
+/* 简单的可访问加载转圈指示器 */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  vertical-align: middle;
+  border: 2px solid rgba(0,0,0,0.15);
+  border-top-color: #409eff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 深色模式兼容（如果父级有 .dark 类） */
+.dark .spinner {
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: #67c23a;
+}
+
 </style>

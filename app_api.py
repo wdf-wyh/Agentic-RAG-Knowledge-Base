@@ -231,8 +231,14 @@ async def query_stream(req: QueryRequest):
                     
                     context_text = "\n\n".join(contexts)
                     prompt = (
-                        "请只返回一个 JSON 对象，格式为 {\"answer\": \"...\"}，其中 answer 是一段完整、连贯的中文回答。不要输出其他文本或解释。\n"
-                        + f"基于以下上下文回答问题:\n{context_text}\n\n问题: {req.question}\n\n"
+                        "你必须只返回一个有效的 JSON 对象，格式严格如下:\n"
+                        "{\"answer\": \"这里是你的中文回答\"}\n"
+                        "重要：\n"
+                        "1. 只输出 JSON 对象，不要输出任何其他文本\n"
+                        "2. answer 字段的值必须是一段完整、连贯的中文回答\n"
+                        "3. 不要在 JSON 前后添加任何额外的字符或解释\n"
+                        "4. 确保 JSON 格式完全有效\n\n"
+                        f"基于以下上下文回答问题:\n{context_text}\n\n问题: {req.question}\n\n"
                         + "回答示例：{\"answer\": \"这是示例答案\"}\n"
                     )
                     
@@ -261,31 +267,41 @@ async def query_stream(req: QueryRequest):
                     
                     # 解析 Ollama 返回（有时 Ollama 会返回一个 JSON 字符串）
                     final_text = ""
+                    s = str(ollama_result).strip()
+                    
+                    # 步骤 1: 尝试直接解析为 JSON
                     try:
-                        # 先尝试直接解析为 JSON
-                        parsed = json.loads(ollama_result)
+                        parsed = json.loads(s)
                         if isinstance(parsed, dict) and "answer" in parsed:
-                            final_text = str(parsed.get("answer", ""))
+                            final_text = str(parsed.get("answer", "")).strip()
                         else:
-                            # 如果 JSON 但没有 answer 字段，使用整个响应的字符串化内容
-                            final_text = str(parsed)
+                            # JSON 格式但没有 answer 字段，可能返回的本身是完整答案
+                            final_text = s
                     except Exception:
-                        # 解析失败，尝试从文本中抽取第一个 JSON 对象
-                        try:
-                            s = str(ollama_result)
-                            start_idx = s.find('{')
-                            end_idx = s.rfind('}')
-                            if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+                        # 步骤 2: 解析失败，尝试从文本中抽取第一个 JSON 对象
+                        start_idx = s.find('{')
+                        end_idx = s.rfind('}')
+                        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+                            try:
                                 maybe_json = s[start_idx:end_idx+1]
                                 parsed2 = json.loads(maybe_json)
                                 if isinstance(parsed2, dict) and "answer" in parsed2:
-                                    final_text = str(parsed2.get("answer", ""))
+                                    final_text = str(parsed2.get("answer", "")).strip()
                                 else:
-                                    final_text = s
-                            else:
-                                final_text = s
-                        except Exception:
-                            final_text = str(ollama_result)
+                                    # 无法找到 answer 字段，返回空白以避免显示 JSON 对象
+                                    final_text = ""
+                            except Exception:
+                                # JSON 解析失败，检查是否存在answer字段的文本模式
+                                # 使用正则表达式查找 "answer": "..." 模式
+                                import re
+                                answer_match = re.search(r'"answer"\s*:\s*"([^"]*(?:\\"[^"]*)*)"', maybe_json)
+                                if answer_match:
+                                    final_text = answer_match.group(1).replace('\\"', '"')
+                                else:
+                                    final_text = ""
+                        else:
+                            # 找不到 JSON 对象，直接作为文本返回
+                            final_text = s
 
                     # 逐字符发送最终文本
                     if final_text:
@@ -389,6 +405,31 @@ def query(req: QueryRequest):
                     temperature=Config.TEMPERATURE,
                     api_url=api_url,
                 )
+
+                # 解析并规范化 Ollama 同步返回，确保返回给前端的 `answer` 为纯文本
+                final_answer = ""
+                try:
+                    parsed = json.loads(ollama_text)
+                    if isinstance(parsed, dict) and "answer" in parsed:
+                        final_answer = str(parsed.get("answer", ""))
+                    else:
+                        final_answer = str(parsed)
+                except Exception:
+                    try:
+                        s = str(ollama_text)
+                        start_idx = s.find('{')
+                        end_idx = s.rfind('}')
+                        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+                            maybe_json = s[start_idx:end_idx+1]
+                            parsed2 = json.loads(maybe_json)
+                            if isinstance(parsed2, dict) and "answer" in parsed2:
+                                final_answer = str(parsed2.get("answer", ""))
+                            else:
+                                final_answer = s
+                        else:
+                            final_answer = s
+                    except Exception:
+                        final_answer = str(ollama_text)
 
                 sources = []
                 for doc in docs:
