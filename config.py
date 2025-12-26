@@ -51,6 +51,15 @@ class Config:
     except Exception:
         MAX_DISTANCE = None
     
+    # 相似度得分阈值（0-1，值越高要求相似度越高）
+    # 默认 0.3：只返回相似度 >= 0.3 的文档
+    # 设置为 None 则禁用此过滤
+    _raw_similarity_threshold = os.getenv("SIMILARITY_THRESHOLD", "0.3").strip()
+    try:
+        SIMILARITY_THRESHOLD = float(_raw_similarity_threshold) if _raw_similarity_threshold != "" else None
+    except Exception:
+        SIMILARITY_THRESHOLD = 0.3
+    
     # 文档目录
     DOCUMENTS_PATH = "./documents"
     

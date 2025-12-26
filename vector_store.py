@@ -196,6 +196,54 @@ class VectorStore:
         # 如果过滤后数量少于 k，仍返回过滤后的所有结果
         return filtered
     
+    def similarity_search_with_score_filter(self, query: str, k: int = None, similarity_threshold: float = None) -> List[tuple]:
+        """带相似度阈值的搜索（过滤低相似度结果）
+        
+        Chroma 返回的是距离 (distance)，距离越小表示越相似。
+        此方法会将距离转换为相似度 (0-1)，并过滤掉相似度低于阈值的结果。
+        
+        距离到相似度的转换公式: similarity = 1 / (1 + distance)
+        - distance=0 -> similarity=1.0（完全匹配）
+        - distance=1 -> similarity=0.5（中等相似）
+        - distance→∞ -> similarity→0（完全不同）
+        
+        Args:
+            query: 查询文本
+            k: 返回结果数量
+            similarity_threshold: 相似度阈值 (0-1)，只返回相似度 >= 此值的文档
+            
+        Returns:
+            (文档, 相似度) 元组列表，按相似度从高到低排序，已过滤低相似度项
+        """
+        if self.vectorstore is None:
+            self.load_vectorstore()
+
+        if self.vectorstore is None:
+            raise ValueError("向量数据库未初始化")
+
+        k = k or Config.TOP_K
+        
+        # 先获取更多候选，确保过滤后仍有足够结果
+        # 获取 k*3 个候选以增加过滤后的有效结果数
+        candidate_k = max(k * 3, 20)
+        
+        # 直接使用 similarity_search_with_score（返回距离值）
+        results = self.vectorstore.similarity_search_with_score(query, k=candidate_k)
+        
+        # 将距离转换为相似度（similarity = 1 / (1 + distance)）
+        # 这样距离 0 变成相似度 1.0，距离越大相似度越低
+        results = [(doc, 1.0 / (1.0 + score)) for doc, score in results]
+        
+        if similarity_threshold is None:
+            return results[:k]
+
+        # 过滤：只保留相似度 >= threshold 的结果
+        filtered = [(doc, score) for doc, score in results if score >= similarity_threshold]
+        
+        # 如果过滤结果不足 k 个，仍返回所有过滤结果（不足为奇）
+        # 这样调用方可以判断是否有足够的相关文档
+        return filtered[:k]
+    
     def delete_collection(self):
         """删除向量数据库集合"""
         if self.vectorstore is not None:

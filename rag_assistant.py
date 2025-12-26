@@ -198,6 +198,17 @@ class RAGAssistant:
             method_use = method or 'vector'
             # 使用优化后的问题进行检索，获得更好的结果
             docs_for_chain = self.retrieve_documents(optimized_question, k=k_use, method=method_use, rerank=bool(rerank))
+            
+            # 如果检索结果为空（由于相似度阈值过滤），直接返回
+            if not docs_for_chain:
+                similarity_threshold = getattr(Config, 'SIMILARITY_THRESHOLD', None)
+                if similarity_threshold is not None:
+                    return {
+                        "question": question,
+                        "answer": "我无法根据现有知识库中的信息回答这个问题",
+                        "sources": [],
+                        "note": f"未找到相似度 >= {similarity_threshold} 的相关文档"
+                    }
 
         try:
             if docs_for_chain is None:
@@ -310,19 +321,38 @@ class RAGAssistant:
         Args:
             query: 查询文本
             k: 返回文档数量
+            method: 检索方法 ('vector'、'bm25' 或 'hybrid')
+            rerank: 是否使用精排
             
         Returns:
-            相关文档列表
+            相关文档列表（已过滤低相似度结果）
         """
-        # 只保留 hybrid 检索：BM25 topN + vector topN -> 合并去重 -> 可选精排
-        # 支持基于向量距离的阈值筛选（如果 Config.MAX_DISTANCE 设置）
+        # 获取相似度阈值配置
+        similarity_threshold = getattr(Config, 'SIMILARITY_THRESHOLD', None)
+        
+        # 首先尝试基于相似度阈值的过滤
         try:
-            max_dist = getattr(Config, 'MAX_DISTANCE', None)
-            if max_dist is not None:
-                docs_and_scores = self.vector_store.similarity_search_with_score_threshold(query, k=k, max_distance=max_dist)
-                return [doc for doc, _ in docs_and_scores]
-        except Exception:
-            # 若阈值筛选失败，继续执行 hybrid
+            if similarity_threshold is not None:
+                docs_and_scores = self.vector_store.similarity_search_with_score_filter(
+                    query, k=k, similarity_threshold=similarity_threshold
+                )
+                filtered_docs = [doc for doc, _ in docs_and_scores]
+                
+                # 如果过滤后没有足够相关的文档，返回空列表或标记结果
+                if not filtered_docs:
+                    print(f"[DEBUG] 检索到 0 个相似度 >= {similarity_threshold} 的文档")
+                    return []
+                
+                print(f"[DEBUG] 检索到 {len(filtered_docs)} 个相似度 >= {similarity_threshold} 的文档")
+                if rerank:
+                    try:
+                        return self.rerank_with_cross_encoder(query, filtered_docs, top_k=k)
+                    except Exception:
+                        return filtered_docs[:k]
+                return filtered_docs[:k]
+        except Exception as e:
+            print(f"[DEBUG] 相似度阈值过滤失败: {e}，继续使用标准检索")
+            # 若阈值筛选失败，继续执行标准检索
             pass
 
         k = k or Config.TOP_K
