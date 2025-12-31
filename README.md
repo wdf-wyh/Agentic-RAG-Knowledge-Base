@@ -1,283 +1,200 @@
-# RAG 知识库助手 📚
+# RAG 知识库系统 v2.0
 
-一个现代化的 AI 知识库问答系统，基于检索增强生成（RAG）技术，提供类似 ChatGPT 官网的用户体验。
+企业级 RAG (Retrieval-Augmented Generation) 知识库问答系统。
 
-## ✨ 新增功能
+## 🌟 特性
 
-- 📤 **文件上传与管理**: 支持拖拽或点击上传文件到服务器
-- 🏗️ **进度展示**: 实时显示知识库构建进度，包括已处理文档数量
-- 💬 **流式输出**: 支持流式响应，实时显示 AI 生成内容
-- 🎨 **GPT 风格界面**: 现代化的深色/浅色主题设计
-- ⚙️ **抽屉式配置**: 模型配置以弹框抽屉形式展现
-- 🖼️ **图片支持**: 支持粘贴或上传图片到输入框
-- 💾 **本地存储**: 模型配置自动保存到浏览器本地存储
+- **多模型支持**: OpenAI、Gemini、Ollama (本地)
+- **混合检索**: 向量检索 + BM25 稀疏检索
+- **精排重排序**: Cross-encoder 精排优化
+- **多种界面**: Web UI、REST API、CLI
+- **企业级架构**: 模块化设计，易于扩展
 
-## 🛠️ 技术栈
-
-### 后端
-- **FastAPI**: 高性能 Web 框架
-- **LangChain**: LLM 应用开发框架
-- **ChromaDB**: 向量数据库
-- **Ollama**: 本地 LLM 支持
-- **OpenAI/Gemini**: 云端 LLM 支持
-
-### 前端
-- **Vue 3**: 渐进式 JavaScript 框架
-- **Element Plus**: 企业级 UI 组件库
-- **Axios**: HTTP 客户端
-- **Vite**: 下一代构建工具
-
-## 📦 项目结构
+## 📁 项目结构
 
 ```
 RAG知识库/
-├── frontend/                 # 前端 Vue 项目
-│   ├── src/
-│   │   ├── App.vue          # 主应用组件
-│   │   ├── main.js          # 入口文件
-│   │   ├── styles.css       # 全局样式（GPT风格）
-│   ├── package.json
-│   └── vite.config.js
-├── app_api.py               # FastAPI 应用
-├── config.py                # 配置文件
-├── rag_assistant.py         # RAG 助手逻辑
-├── document_processor.py    # 文档处理
-├── vector_store.py          # 向量数据库
-├── ollama_client.py         # Ollama 本地模型
-├── documents/               # 知识库文档目录
-├── vector_db/               # 向量数据库存储
-└── requirements.txt         # Python 依赖
-
+├── src/                    # 核心源代码
+│   ├── api/               # REST API 模块
+│   │   ├── app.py         # FastAPI 应用
+│   │   └── routes.py      # API 路由
+│   ├── config/            # 配置管理
+│   │   └── settings.py    # 配置类
+│   ├── core/              # 核心业务逻辑
+│   │   ├── document_processor.py  # 文档处理
+│   │   ├── vector_store.py        # 向量数据库
+│   │   └── bm25_retriever.py      # BM25 检索
+│   ├── services/          # 服务层
+│   │   ├── rag_assistant.py       # RAG 助手
+│   │   └── ollama_client.py       # Ollama 客户端
+│   ├── models/            # 数据模型
+│   │   └── schemas.py     # Pydantic 模型
+│   └── utils/             # 工具函数
+│       └── logger.py      # 日志工具
+├── frontend/              # 前端代码 (Vue.js)
+├── documents/             # 知识库文档
+├── vector_db/             # 向量数据库存储
+├── tests/                 # 测试代码
+├── app.py                 # Streamlit Web 界面
+├── run_api.py             # API 服务入口
+├── run_cli.py             # CLI 工具入口
+├── run_web.py             # Web 界面入口
+├── .env                   # 环境配置
+└── requirements.txt       # 依赖列表
 ```
 
 ## 🚀 快速开始
 
 ### 1. 安装依赖
 
-#### 后端
 ```bash
 pip install -r requirements.txt
 ```
 
-#### 前端
-```bash
-cd frontend
-npm install
-```
-
 ### 2. 配置环境变量
 
-创建 `.env` 文件并配置：
-
-```env
-# OpenAI 配置（可选）
-OPENAI_API_KEY=your_key_here
-OPENAI_API_BASE=https://api.openai.com/v1
-
-# Gemini 配置（可选）
-GEMINI_API_KEY=your_key_here
-
-# Ollama 配置（可选 - 本地LLM）
-OLLAMA_API_URL=http://localhost:11434
-OLLAMA_MODEL=gemma3:4b
-
-# 向量模型配置
-EMBEDDING_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-
-# 其他配置
-MODEL_PROVIDER=openai  # 可选：openai, gemini, ollama
-TOP_K=3  # 检索文档数
-MAX_TOKENS=512  # 生成最大token数
-TEMPERATURE=0.7  # 温度参数
-```
-
-### 3. 运行后端服务
+复制 `.env.example` 为 `.env` 并配置：
 
 ```bash
-python app_api.py
+cp .env.example .env
 ```
 
-后端会在 `http://localhost:8000` 启动
+主要配置项：
+- `MODEL_PROVIDER`: 模型提供者 (openai/gemini/ollama)
+- `OPENAI_API_KEY`: OpenAI API 密钥
+- `OLLAMA_MODEL`: 本地 Ollama 模型名称
 
-### 4. 运行前端应用
+### 3. 构建知识库
 
 ```bash
-cd frontend
-npm run dev
+# 方式一：CLI
+python run_cli.py build --documents ./documents
+
+# 方式二：Web 界面
+python run_web.py
 ```
 
-前端会在 `http://localhost:5173` 启动
+### 4. 启动服务
 
-## 📖 使用说明
+```bash
+# 启动 REST API
+python run_api.py
 
-### 上传知识库文档
+# 启动 Streamlit Web 界面
+python run_web.py
 
-1. **点击上传区域** 或 **拖拽文件** 到上传区
-2. 支持的格式：`.md`, `.pdf`, `.docx`, `.txt`
-3. 已上传的文件会显示在列表中
-
-### 构建知识库
-
-1. 点击"开始构建"按钮
-2. 系统会扫描 `documents/` 文件夹中的所有文档
-3. 实时显示处理进度和已处理的文档块数量
-4. 构建完成后状态栏会显示"✓ 已加载"
-
-### 配置模型
-
-1. 点击右上角的设置按钮（⚙️）
-2. 在抽屉面板中选择模型提供者：
-   - **后端默认**: 使用配置文件中的默认设置
-   - **OpenAI**: 使用 OpenAI 的 GPT 模型
-   - **Gemini**: 使用 Google Gemini 模型
-   - **Ollama**: 使用本地运行的模型
-3. 对于 Ollama，需要输入模型名称和 API URL
-4. 配置会自动保存到浏览器
-
-### 提问和对话
-
-1. 在输入框中输入问题
-2. 支持的交互方式：
-   - 按 **Shift+Enter** 发送
-   - 点击"发送"按钮发送
-3. 支持**粘贴或上传图片** - 点击图片按钮
-4. 流式响应会逐字显示，提供流畅的用户体验
-5. 点击"参考来源"可以查看答案基于的文档片段
-
-## 🔧 API 端点
-
-### 文件上传
-```
-POST /api/upload
-- 参数: 文件二进制数据
-- 返回: { success, filename, size, path }
+# 启动前端开发服务器
+cd frontend && npm run dev
 ```
 
-### 知识库构建
-```
-POST /api/build-start
-- 返回: { success, message }
+## 📖 使用方式
 
-GET /api/build-progress
-- 返回: { processing, progress, total, current_file, status }
-```
+### CLI 命令行
 
-### 查询（流式）
-```
-POST /api/query-stream
-- 参数: { question, provider, ollama_model, ollama_api_url }
-- 返回: Server-Sent Events (SSE) 流
-  - type: 'sources' - 参考来源
-  - type: 'content' - 内容流
-  - type: 'done' - 完成标记
-  - type: 'error' - 错误信息
+```bash
+# 构建知识库
+python run_cli.py build --documents ./documents
+
+# 单次查询
+python run_cli.py query --question "什么是机器学习？"
+
+# 交互式对话
+python run_cli.py chat
+
+# 使用 Ollama 本地模型
+python run_cli.py chat --provider ollama
 ```
 
-### 查询（非流式）
+### REST API
+
+```bash
+# 查询接口 (流式)
+curl -X POST http://localhost:8000/api/query-stream \
+  -H "Content-Type: application/json" \
+  -d '{"question": "什么是机器学习？"}'
+
+# 构建知识库
+curl -X POST http://localhost:8000/api/build \
+  -H "Content-Type: application/json" \
+  -d '{"documents_path": "./documents"}'
 ```
-POST /api/query
-- 参数: { question, provider, ollama_model, ollama_api_url }
-- 返回: { question, answer, sources }
-```
 
-### 状态查询
-```
-GET /api/status
-- 返回: { vector_store_loaded }
-```
-
-## 🌟 界面特性
-
-### GPT 风格设计
-- 清爽的白色背景，符合现代审美
-- 绿色（#10a37f）作为主色调
-- 流畅的动画和过渡效果
-- 响应式布局，支持不同屏幕尺寸
-
-### 消息交互
-- **用户消息**: 右对齐，绿色渐变背景，圆角气泡
-- **助手消息**: 左对齐，浅灰色背景
-- **逐字动画**: 模拟实时输入的流畅感
-- **光标效果**: 闪烁光标提示输入中
-
-### 进度显示
-- 知识库构建进度条，动态颜色变化
-- 实时显示处理进度百分比
-- 当前处理文件名显示
-
-## ⌨️ 快捷键
-
-- **Shift + Enter**: 发送消息
-- **Ctrl/Cmd + K**: 清空聊天（可自定义）
-
-## 🔐 安全建议
-
-1. **API 密钥**: 不要在前端代码中存储敏感密钥
-2. **CORS**: 生产环境应配置适当的 CORS 策略
-3. **文件上传**: 实施文件类型和大小限制
-4. **请求限制**: 建议使用速率限制防止滥用
-
-## 🐛 故障排查
-
-### 连接错误
-- 确保后端服务运行在 `http://localhost:8000`
-- 检查防火墙设置
-- 查看浏览器开发者工具的网络标签
-
-### 流式响应中断
-- 检查网络连接
-- 查看后端日志获取详细错误信息
-- 尝试刷新页面重新连接
-
-### 知识库构建失败
-- 检查 `documents/` 文件夹是否存在
-- 确认文件格式正确（.md, .pdf, .docx, .txt）
-- 查看后端控制台的错误信息
-
-### 模型响应缓慢
-- 对于 OpenAI/Gemini：检查 API 额度和网络连接
-- 对于 Ollama：确保本地模型已加载，检查系统资源
-
-## 📝 配置选项详解
-
-### Config.py 主要参数
+### Python SDK
 
 ```python
-# 模型配置
-MODEL_PROVIDER = "openai"  # 默认模型提供者
-EMBEDDING_MODEL = "..."    # 向量模型路径
-TOP_K = 3                  # 检索文档数
+from src.services.rag_assistant import RAGAssistant
+from src.core.vector_store import VectorStore
 
-# OpenAI 配置
-OPENAI_API_KEY = "..."
-OPENAI_API_BASE = "..."
+# 初始化
+vector_store = VectorStore()
+vector_store.load_vectorstore()
+assistant = RAGAssistant(vector_store=vector_store)
+assistant.setup_qa_chain()
 
-# Ollama 配置
-OLLAMA_MODEL = "gemma3:4b"
-OLLAMA_API_URL = "http://localhost:11434"
-
-# 生成参数
-MAX_TOKENS = 512
-TEMPERATURE = 0.7
+# 查询
+result = assistant.query("什么是深度学习？")
+print(result["answer"])
 ```
 
-## 🤝 贡献
+## ⚙️ 配置说明
 
-欢迎提交 Issue 和 Pull Request！
+### 环境变量
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `MODEL_PROVIDER` | 模型提供者 | openai |
+| `OPENAI_API_KEY` | OpenAI API 密钥 | - |
+| `OLLAMA_MODEL` | Ollama 模型名称 | gemma3:4b |
+| `OLLAMA_API_URL` | Ollama API 地址 | http://localhost:11434 |
+| `EMBEDDING_MODEL` | 嵌入模型 | text-embedding-3-small |
+| `LLM_MODEL` | LLM 模型 | gpt-4o-mini |
+| `VECTOR_DB_PATH` | 向量库路径 | ./vector_db |
+| `CHUNK_SIZE` | 文档分块大小 | 500 |
+| `TOP_K` | 检索结果数量 | 3 |
+| `SIMILARITY_THRESHOLD` | 相似度阈值 | 0.3 |
+
+## 🔧 开发指南
+
+### 模块导入
+
+```python
+# 推荐方式（企业级）
+from src.config.settings import Config
+from src.core.document_processor import DocumentProcessor
+from src.services.rag_assistant import RAGAssistant
+
+# 兼容方式（向后兼容）
+from config import Config
+from document_processor import DocumentProcessor
+from rag_assistant import RAGAssistant
+```
+
+### 运行测试
+
+```bash
+# 单元测试
+pytest tests/unit/
+
+# 集成测试
+pytest tests/integration/
+```
+
+## 📝 更新日志
+
+### v2.0.0 (2024-12-31)
+- 重构为企业级架构
+- 模块化 src/ 目录结构
+- 分离 API、核心逻辑、服务层
+- 添加多入口点支持
+- 保持向后兼容性
+
+### v1.0.0
+- 初始版本
+- 基础 RAG 功能
+- Streamlit Web 界面
+- CLI 工具
 
 ## 📄 许可证
 
 MIT License
-
-## 🙏 致谢
-
-- LangChain 社区
-- ChromaDB 团队
-- Element Plus 组件库
-- Ollama 项目
-
----
-
-**更新日期**: 2024年12月
-**版本**: 2.0.0
 
