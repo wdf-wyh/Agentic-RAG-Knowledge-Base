@@ -1,0 +1,20 @@
+{
+  "proxies": [
+    {
+      "host": "127.0.0.1",
+      "port": 7890,
+      "protocol": "http",
+      "provider": "local",
+      "username": null,
+      "password": null,
+      "country": "CN"
+    }
+  ],
+  "rotation_strategy": "smart",
+  "check_url": "https://httpbin.org/ip",
+  "check_timeout": 10,
+  "check_interval": 300,
+  "max_fail_count": 10,
+  "cooldown_time": 60,
+  "_comment": "代理池配置文件示例，支持多种代理格式"
+}

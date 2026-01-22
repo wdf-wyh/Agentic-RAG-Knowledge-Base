@@ -6,6 +6,7 @@ import os
 import time
 import asyncio
 import traceback
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -14,7 +15,12 @@ from src.core.document_processor import DocumentProcessor
 from src.core.vector_store import VectorStore
 from src.services.rag_assistant import RAGAssistant
 from src.services.ollama_client import generate as ollama_generate, OllamaError
+from src.services.deepseek_client import generate as deepseek_generate, DeepSeekError
 from src.models.schemas import QueryRequest, BuildRequest
+
+# 配置日志
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter()
 
@@ -185,7 +191,10 @@ async def build_progress_endpoint():
 
 @router.post("/query-stream")
 async def query_stream(req: QueryRequest):
-    """流式查询端点"""
+    """流式查询知识库（SSE）"""
+    start_time = time.time()
+    logger.info(f"[Query Stream] 开始处理查询 - 问题: {req.question[:100]}..., Provider: {req.provider}")
+    
     if not load_assistant():
         error_msg = "向量数据库未加载。请先构建或确认数据库目录。"
         async def error_generate():
@@ -203,7 +212,10 @@ async def query_stream(req: QueryRequest):
                         load_assistant()
                         assistant = get_assistant()
                     
+                    logger.info(f"[Ollama] 开始检索文档...")
                     docs = assistant.retrieve_documents(req.question, k=Config.TOP_K)
+                    logger.info(f"[Ollama] 问题: {req.question}")
+                    logger.info(f"[Ollama] 检索到 {len(docs)} 个文档")
                     print(f"[DEBUG] 问题: {req.question}")
                     print(f"[DEBUG] 检索到 {len(docs)} 个文档")
                     
@@ -261,6 +273,8 @@ async def query_stream(req: QueryRequest):
                     yield f"data: {json.dumps({'type': 'sources', 'data': sources, 'meta': meta_info})}\n\n"
                     
                     # 调用 Ollama 生成
+                    logger.info(f"[Ollama] 开始调用AI生成答案 - 模型: {model_name}")
+                    ai_start = time.time()
                     ollama_result = ollama_generate(
                         model=model_name,
                         prompt=prompt,
@@ -270,9 +284,13 @@ async def query_stream(req: QueryRequest):
                         stream=False
                     )
                     
+                    ai_elapsed = time.time() - ai_start
+                    logger.info(f"[Ollama] AI调用完成 - 耗时: {ai_elapsed:.2f}秒")
+                    
                     # 解析 Ollama 返回
                     final_text = ""
                     s = str(ollama_result).strip()
+                    logger.info(f"[Ollama] 原始返回长度: {len(s)} 字符")
                     print(f"[DEBUG] Ollama 原始返回 (前200字): {s[:200]}")
                     
                     try:
@@ -304,10 +322,13 @@ async def query_stream(req: QueryRequest):
 
                     # 逐字符发送
                     if final_text:
+                        logger.info(f"[Ollama] 开始流式返回答案，长度: {len(final_text)} 字符")
                         for char in final_text:
                             yield f"data: {json.dumps({'type': 'content', 'data': char})}\n\n"
                             await asyncio.sleep(0.01)
 
+                    total_elapsed = time.time() - start_time
+                    logger.info(f"[Ollama] 完整流程完成 - 总耗时: {total_elapsed:.2f}秒")
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
                     
                 except OllamaError as oe:
@@ -317,6 +338,111 @@ async def query_stream(req: QueryRequest):
                     print(f"Ollama 分支异常: {e}")
                     traceback.print_exc()
                     yield f"data: {json.dumps({'type': 'error', 'data': f'Ollama 处理失败: {str(e)}'})}\n\n"
+            elif req_provider == 'deepseek':
+                try:
+                    logger.info(f"[DeepSeek] 开始处理请求")
+                    assistant = get_assistant()
+                    if assistant is None:
+                        load_assistant()
+                        assistant = get_assistant()
+
+                    logger.info(f"[DeepSeek] 开始检索文档...")
+                    docs = assistant.retrieve_documents(req.question, k=Config.TOP_K)
+                    logger.info(f"[DeepSeek] 检索到 {len(docs)} 个文档")
+                    if not docs:
+                        similarity_threshold = getattr(Config, 'SIMILARITY_THRESHOLD', None)
+                        if similarity_threshold is not None:
+                            yield f"data: {json.dumps({'type': 'sources', 'data': []})}\n\n"
+                            yield f"data: {json.dumps({'type': 'content', 'data': '我无法根据现有知识库中的信息回答这个问题'})}\n\n"
+                            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                            return
+
+                    contexts = []
+                    for doc in docs:
+                        if hasattr(doc, 'page_content'):
+                            contexts.append(doc.page_content)
+                        elif isinstance(doc, dict):
+                            contexts.append(doc.get('page_content') or doc.get('content') or str(doc))
+                        else:
+                            contexts.append(str(doc))
+
+                    context_text = "\n\n".join(contexts)
+
+                    prompt = (
+                        "你必须只返回一个有效的 JSON 对象，格式严格如下:\n"
+                        '{"answer": "这里是你的中文回答"}\n'
+                        "重要规则：只能基于下面的上下文回答，不要添加外部信息。\n\n"
+                        f"上下文信息:\n{context_text}\n\n问题: {req.question}\n"
+                    )
+
+                    model_name = req.deepseek_model or Config.LLM_MODEL
+                    api_url = req.deepseek_api_url or Config.DEEPSEEK_API_URL
+                    api_key = req.deepseek_api_key or Config.DEEPSEEK_API_KEY
+
+                    sources = []
+                    for doc in docs:
+                        src = getattr(doc, 'metadata', {}).get('source', '未知来源') if hasattr(doc, 'metadata') else '未知来源'
+                        preview = getattr(doc, 'page_content', '')
+                        preview = preview[:200].replace('\n', ' ') if preview else ''
+                        sources.append({"source": src, "preview": preview})
+
+                    yield f"data: {json.dumps({'type': 'sources', 'data': sources})}\n\n"
+
+                    # 调用 DeepSeek
+                    logger.info(f"[DeepSeek] 开始调用AI生成答案 - 模型: {model_name}")
+                    ai_start = time.time()
+                    ds_result = deepseek_generate(
+                        model=model_name,
+                        prompt=prompt,
+                        max_tokens=Config.MAX_TOKENS,
+                        temperature=Config.TEMPERATURE,
+                        api_url=api_url,
+                        api_key=api_key,
+                        stream=False,
+                    )
+                    
+                    ai_elapsed = time.time() - ai_start
+                    logger.info(f"[DeepSeek] AI调用完成 - 耗时: {ai_elapsed:.2f}秒")
+
+                    final_text = ""
+                    s = str(ds_result).strip()
+                    logger.info(f"[DeepSeek] 原始返回长度: {len(s)} 字符")
+                    try:
+                        parsed = json.loads(s)
+                        if isinstance(parsed, dict) and 'answer' in parsed:
+                            final_text = str(parsed.get('answer', '')).strip()
+                        else:
+                            final_text = s
+                    except Exception:
+                        start_idx = s.find('{')
+                        end_idx = s.rfind('}')
+                        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+                            try:
+                                maybe_json = s[start_idx:end_idx+1]
+                                parsed2 = json.loads(maybe_json)
+                                if isinstance(parsed2, dict) and 'answer' in parsed2:
+                                    final_text = str(parsed2.get('answer', '')).strip()
+                                else:
+                                    final_text = ''
+                            except Exception:
+                                import re
+                                answer_match = re.search(r'"answer"\s*:\s*"([^\"]*(?:\\\"[^\"]*)*)"', s)
+                                if answer_match:
+                                    final_text = answer_match.group(1).replace('\\"', '"')
+                                else:
+                                    final_text = ''
+
+                    if final_text:
+                        for char in final_text:
+                            yield f"data: {json.dumps({'type': 'content', 'data': char})}\n\n"
+                            await asyncio.sleep(0.01)
+
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                except DeepSeekError as dse:
+                    yield f"data: {json.dumps({'type': 'error', 'data': f'DeepSeek 错误: {str(dse)}'})}\n\n"
+                except Exception as e:
+                    traceback.print_exc()
+                    yield f"data: {json.dumps({'type': 'error', 'data': f'DeepSeek 处理失败: {str(e)}'})}\n\n"
             else:
                 # 默认使用 RAGAssistant
                 try:

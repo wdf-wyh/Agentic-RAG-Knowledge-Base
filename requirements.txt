@@ -11,6 +11,12 @@ python-docx>=1.1.0
 openpyxl>=3.1.2
 beautifulsoup4>=4.12.3
 markdown>=3.5.2
+docx2txt>=0.8
+jq>=1.6.0
+ebooklib>=0.18
+striprtf>=0.0.26
+python-pptx>=0.6.23
+xlrd>=2.0.1
 
 # Web 界面
 streamlit>=1.31.0
@@ -34,3 +40,11 @@ ollama>=0.1.0   # 如果你使用 Ollama，本条可选
 
 fastapi>=0.95.0
 uvicorn[standard]>=0.22.0
+
+# ===== Agent 功能依赖 =====
+# 网页搜索 (选择一个或多个)
+duckduckgo-search>=4.0.0   # 免费，无需 API Key
+tavily-python>=0.3.0       # 推荐，专为 AI 设计，需要 API Key
+
+# 可选增强
+# serpapi>=0.1.0           # Google 搜索，需要 API Key

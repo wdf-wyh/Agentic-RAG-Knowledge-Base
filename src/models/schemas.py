@@ -9,6 +9,10 @@ class QueryRequest(BaseModel):
     provider: Optional[str] = None
     ollama_model: Optional[str] = None
     ollama_api_url: Optional[str] = None
+    # DeepSeek 可选配置
+    deepseek_model: Optional[str] = None
+    deepseek_api_url: Optional[str] = None
+    deepseek_api_key: Optional[str] = None
     # 检索选项
     method: Optional[str] = None  # 'vector' | 'bm25' | 'hybrid'
     rerank: Optional[bool] = None

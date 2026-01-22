@@ -1,6 +1,8 @@
 """文档加载和处理模块"""
 import os
-from typing import List
+import json
+import csv
+from typing import List, Any
 from pathlib import Path
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -8,8 +10,14 @@ from langchain_community.document_loaders import (
     PyPDFLoader,
     TextLoader,
     Docx2txtLoader,
+    CSVLoader,
+    UnstructuredHTMLLoader,
+    UnstructuredPowerPointLoader,
+    UnstructuredExcelLoader,
+    UnstructuredEPubLoader,
+    UnstructuredRTFLoader,
+    JSONLoader,
 )
-from typing import Any
 
 from src.config.settings import Config
 
@@ -56,6 +64,28 @@ class DocumentProcessor:
             elif file_extension == ".md":
                 # 使用 TextLoader 加载 Markdown 文件，避免 UnstructuredMarkdownLoader 的兼容性问题
                 loader = TextLoader(file_path, encoding="utf-8")
+            elif file_extension == ".csv":
+                loader = CSVLoader(file_path, encoding="utf-8")
+            elif file_extension == ".json":
+                # JSON 文件使用 jq_schema 提取文本内容
+                loader = JSONLoader(
+                    file_path=file_path,
+                    jq_schema=".",
+                    text_content=False,
+                )
+            elif file_extension in [".html", ".htm"]:
+                loader = UnstructuredHTMLLoader(file_path)
+            elif file_extension in [".ppt", ".pptx"]:
+                loader = UnstructuredPowerPointLoader(file_path)
+            elif file_extension in [".xls", ".xlsx"]:
+                loader = UnstructuredExcelLoader(file_path)
+            elif file_extension == ".epub":
+                loader = UnstructuredEPubLoader(file_path)
+            elif file_extension == ".rtf":
+                loader = UnstructuredRTFLoader(file_path)
+            elif file_extension in [".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".go", ".rs", ".rb", ".php", ".sh", ".sql", ".yaml", ".yml", ".xml", ".ini", ".cfg", ".conf", ".log"]:
+                # 支持常见代码和配置文件
+                loader = TextLoader(file_path, encoding="utf-8")
             else:
                 raise ValueError(f"不支持的文件格式: {file_extension}")
             
@@ -77,7 +107,23 @@ class DocumentProcessor:
             所有文档列表
         """
         all_documents = []
-        supported_extensions = [".pdf", ".txt", ".doc", ".docx", ".md"]
+        # 支持的文件格式列表
+        supported_extensions = [
+            # 文档格式
+            ".pdf", ".txt", ".doc", ".docx", ".md", ".rtf",
+            # 数据格式
+            ".csv", ".json",
+            # 网页格式
+            ".html", ".htm",
+            # 演示和表格
+            ".ppt", ".pptx", ".xls", ".xlsx",
+            # 电子书
+            ".epub",
+            # 代码文件
+            ".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".go", ".rs", ".rb", ".php", ".sh",
+            # 配置文件
+            ".sql", ".yaml", ".yml", ".xml", ".ini", ".cfg", ".conf", ".log",
+        ]
         
         directory = Path(directory_path)
         if not directory.exists():
@@ -164,3 +210,33 @@ class DocumentProcessor:
         
         chunks = self.split_documents(documents)
         return chunks
+    
+    @staticmethod
+    def get_supported_extensions() -> dict:
+        """获取支持的文件格式列表
+        
+        Returns:
+            按类别分组的支持格式字典
+        """
+        return {
+            "文档": [".pdf", ".txt", ".doc", ".docx", ".md", ".rtf"],
+            "数据": [".csv", ".json"],
+            "网页": [".html", ".htm"],
+            "演示": [".ppt", ".pptx"],
+            "表格": [".xls", ".xlsx"],
+            "电子书": [".epub"],
+            "代码": [".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".go", ".rs", ".rb", ".php", ".sh"],
+            "配置": [".sql", ".yaml", ".yml", ".xml", ".ini", ".cfg", ".conf", ".log"],
+        }
+    
+    @staticmethod
+    def get_all_supported_extensions() -> List[str]:
+        """获取所有支持的文件扩展名列表
+        
+        Returns:
+            扩展名列表
+        """
+        extensions = []
+        for exts in DocumentProcessor.get_supported_extensions().values():
+            extensions.extend(exts)
+        return extensions

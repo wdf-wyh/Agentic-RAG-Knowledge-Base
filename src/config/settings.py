@@ -2,9 +2,19 @@
 import os
 from dotenv import load_dotenv
 from typing import Optional
+import pytz
 
 # 加载环境变量
 load_dotenv()
+
+# 设置时区为中国
+os.environ['TZ'] = 'Asia/Shanghai'
+try:
+    import time
+    time.tzset()
+except AttributeError:
+    # Windows 不支持 tzset
+    pass
 
 
 class Settings:
@@ -31,14 +41,22 @@ class Config:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
     OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
+    # DeepSeek 配置
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.ai")
     # .strip()：移除字符串开头和结尾的空白字符（空格、制表符、换行符等）。
     # .lower()：将字符串转换为小写字母。  
     _raw_provider = os.getenv("MODEL_PROVIDER", "").strip().lower()
     if _raw_provider:
         MODEL_PROVIDER = _raw_provider
     else:
+        # 自动检测可用的 API key，优先顺序：GEMINI -> DEEPSEEK -> OPENAI
         if GEMINI_API_KEY:
             MODEL_PROVIDER = "gemini"
+        elif DEEPSEEK_API_KEY:
+            MODEL_PROVIDER = "deepseek"
+        elif OPENAI_API_KEY:
+            MODEL_PROVIDER = "openai"
         else:
             MODEL_PROVIDER = "openai"
     
@@ -89,6 +107,9 @@ class Config:
             # Ollama 不需要 API key，但可以验证模型名称
             if not cls.OLLAMA_MODEL:
                 raise ValueError("OLLAMA_MODEL 未设置，请在 .env 文件中配置")
+        elif cls.MODEL_PROVIDER == "deepseek":
+            if not cls.DEEPSEEK_API_KEY:
+                raise ValueError("DEEPSEEK_API_KEY 未设置，请在 .env 文件中配置")
         else:
             raise ValueError(f"不支持的 MODEL_PROVIDER: {cls.MODEL_PROVIDER}")
         return True

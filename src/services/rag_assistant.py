@@ -20,22 +20,27 @@ class RAGAssistant:
     """RAG 知识库助手"""
     
     # 默认提示词模板
-    DEFAULT_PROMPT_TEMPLATE = """你是一个专业的知识库助手。请严格遵循以下规则回答用户的问题：
+    DEFAULT_PROMPT_TEMPLATE = """你是一个严格遵守规则的知识库助手。你的回答必须且只能基于下面提供的"上下文信息"。
 
-【重要规则】
-1. 必须仅基于以下"上下文信息"来回答问题，不能使用常识或其他信息
-2. 如果上下文中没有直接相关的信息，必须明确回答："我无法根据现有知识库中的信息回答这个问题"
-3. 不能进行任何推测、想象或外推
-4. 回答必须准确、简洁、有根据
+【绝对禁止的行为】
+- 绝对禁止使用你的训练数据或常识来回答
+- 绝对禁止编造、推测或猜测任何信息
+- 绝对禁止说"根据我的了解"、"通常来说"等表述
+- 如果上下文中没有明确的答案，必须说"知识库中没有相关信息"
 
-【上下文信息】
+【上下文信息 - 这是你唯一可以使用的信息来源】
 {context}
 
 【用户问题】
 {question}
 
-【回答】
-请根据上述上下文信息给出回答。如果信息不足，请明确说明。"""
+【回答要求】
+1. 仔细阅读上下文信息，找出与问题直接相关的内容
+2. 如果上下文中有答案，直接引用上下文内容来回答
+3. 如果上下文中没有相关信息，必须明确回答："知识库中没有找到关于这个问题的相关信息"
+4. 不要添加任何上下文中没有的信息
+
+请回答："""
     
     def __init__(
         self,
@@ -69,6 +74,23 @@ class RAGAssistant:
                 temperature=temp,
                 num_predict=max_tok,
             )
+        elif Config.MODEL_PROVIDER == "deepseek":
+            # 使用 DeepSeek 提供者（优先使用 langchain_deepseek 集成）
+            try:
+                # 通过 langchain 的统一入口创建模型，传入 provider
+                self.llm = init_chat_model(
+                    model,
+                    model_provider="deepseek",
+                    temperature=temp,
+                    max_tokens=max_tok,
+                    api_key=Config.DEEPSEEK_API_KEY,
+                    api_url=Config.DEEPSEEK_API_URL,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    "无法初始化 DeepSeek 模型，确保已安装 langchain-deepseek 或检查 DEEPSEEK_API_KEY 与 DEEPSEEK_API_URL 设置。错误: "
+                    + str(e)
+                )
         else:
             # 使用其他提供者（OpenAI、Gemini 等）
             self.llm = init_chat_model(
@@ -102,15 +124,19 @@ class RAGAssistant:
             input_variables=["context", "question"]
         )
 
-        refine_template = """基于以下已有答案与更多的上下文信息，对答案进行改进或补充。
+        refine_template = """你必须严格基于上下文信息来改进答案。绝对禁止使用外部知识。
 
 问题: {question}
 
 已有回答: {existing_answer}
 
-额外上下文: {context}
+额外上下文（这是唯一可用的新信息来源）: {context}
 
-请在不与已有答案冲突的前提下，使用额外上下文信息改进并给出更准确、详细的回答。如果额外上下文中没有有用信息，请保留原回答。
+【严格规则】
+1. 只能使用"额外上下文"中明确出现的信息来改进答案
+2. 绝对禁止添加任何上下文中没有的内容
+3. 如果额外上下文中没有相关信息，保持原回答不变
+4. 如果原回答说"知识库中没有相关信息"，且额外上下文也没有相关内容，保持这个回答
 
 改进后的回答:"""
 

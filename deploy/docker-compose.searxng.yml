@@ -1,0 +1,66 @@
+# SearXNG Docker 配置
+# 
+# SearXNG 是一个免费的开源元搜索引擎，聚合多个搜索引擎的结果。
+# 官方文档: https://docs.searxng.org/
+#
+# 启动命令:
+#   docker-compose -f deploy/docker-compose.searxng.yml up -d
+#
+# 访问地址:
+#   http://localhost:8080
+
+version: '3.8'
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: rag-searxng
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-your-secret-key-change-me}
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 可选: Redis 缓存，提升搜索性能
+  redis:
+    image: redis:alpine
+    container_name: rag-searxng-redis
+    restart: unless-stopped
+    command: redis-server --save 30 1 --loglevel warning
+    volumes:
+      - redis-data:/data
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  redis-data:
