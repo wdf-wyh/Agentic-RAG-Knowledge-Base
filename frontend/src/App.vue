@@ -6,7 +6,7 @@
         <div class="logo-section">
           <!-- <div class="logo-icon">📚</div> -->
           <div class="logo-text">
-            <h1>智慧食堂 知识库</h1>
+            <h1> 知识库</h1>
             <p>智能知识检索助手</p>
           </div>
         </div>
@@ -354,11 +354,11 @@ export default {
       // 查询模式
       queryMode: 'rag',
       modeOptions: [
-        { value: 'rag', label: '纯 RAG', icon: '📚', desc: '仅知识库检索，速度快' },
-        { value: 'smart', label: '智能路由', icon: '🧠', desc: '自动判断用 RAG 还是 Agent' },
-        { value: 'full', label: '完整 Agent', icon: '🤖', desc: '全功能推理+工具' },
-        { value: 'research', label: '研究模式', icon: '🔬', desc: '强化网络搜索能力' },
-        { value: 'manager', label: '管理模式', icon: '📁', desc: '强化文件操作能力' }
+        { value: 'rag', label: '纯 RAG', icon: '', desc: '仅知识库检索，速度快' },
+        { value: 'smart', label: '智能处理', icon: '', desc: '自动判断用 RAG 还是 Agent' },
+        { value: 'full', label: '完整 Agent', icon: '', desc: '全功能推理+工具' },
+        { value: 'research', label: '网络模式', icon: '', desc: '强化网络搜索能力' },
+        { value: 'manager', label: '文件模式', icon: '', desc: '强化文件操作能力' }
       ],
       
       // 模型配置
