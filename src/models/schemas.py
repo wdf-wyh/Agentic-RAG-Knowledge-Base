@@ -1,7 +1,15 @@
 """Pydantic 数据模型"""
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Any
+from datetime import datetime
 
+
+class ConversationMessage(BaseModel):
+    """对话消息模型"""
+    role: str = Field(..., description="消息角色: 'user' 或 'assistant'")
+    content: str = Field(..., description="消息内容")
+    timestamp: Optional[str] = Field(default=None, description="消息时间戳")
+    
 
 class QueryRequest(BaseModel):
     """查询请求模型"""
@@ -17,6 +25,9 @@ class QueryRequest(BaseModel):
     method: Optional[str] = None  # 'vector' | 'bm25' | 'hybrid'
     rerank: Optional[bool] = None
     top_k: Optional[int] = None
+    # 对话历史
+    conversation_id: Optional[str] = Field(default=None, description="会话ID，用于维护连续对话")
+    history: Optional[List[ConversationMessage]] = Field(default=None, description="历史对话消息列表")
 
 
 class QueryResponse(BaseModel):

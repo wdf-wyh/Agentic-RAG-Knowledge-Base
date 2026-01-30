@@ -9,6 +9,7 @@ from typing import Any
 from src.config.settings import Config
 from src.core.vector_store import VectorStore
 from src.core.bm25_retriever import BM25Retriever
+from src.models.schemas import ConversationMessage
 
 try:
     from sentence_transformers import CrossEncoder
@@ -19,7 +20,7 @@ except Exception:
 class RAGAssistant:
     """RAG 知识库助手"""
     
-    # 默认提示词模板
+    # 默认提示词模板（支持对话历史）
     DEFAULT_PROMPT_TEMPLATE = """你是一个严格遵守规则的知识库助手。你的回答必须且只能基于下面提供的"上下文信息"。
 
 【绝对禁止的行为】
@@ -28,6 +29,7 @@ class RAGAssistant:
 - 绝对禁止说"根据我的了解"、"通常来说"等表述
 - 如果上下文中没有明确的答案，必须说"知识库中没有相关信息"
 
+{conversation_history}
 【上下文信息 - 这是你唯一可以使用的信息来源】
 {context}
 
@@ -35,10 +37,11 @@ class RAGAssistant:
 {question}
 
 【回答要求】
-1. 仔细阅读上下文信息，找出与问题直接相关的内容
-2. 如果上下文中有答案，直接引用上下文内容来回答
-3. 如果上下文中没有相关信息，必须明确回答："知识库中没有找到关于这个问题的相关信息"
-4. 不要添加任何上下文中没有的信息
+1. 如果有对话历史，理解上下文和指代关系
+2. 仔细阅读上下文信息，找出与问题直接相关的内容
+3. 如果上下文中有答案，直接引用上下文内容来回答
+4. 如果上下文中没有相关信息，必须明确回答："知识库中没有找到关于这个问题的相关信息"
+5. 不要添加任何上下文中没有的信息
 
 请回答："""
     
@@ -119,12 +122,18 @@ class RAGAssistant:
         
         # 创建提示词模板（Refine chain 需要两个 prompt：question_prompt 和 refine_prompt）
         template = prompt_template or self.DEFAULT_PROMPT_TEMPLATE
+        
+        # 创建一个部分模板，为 conversation_history 提供默认空值
+        from langchain_core.prompts import PromptTemplate
         question_prompt = PromptTemplate(
             template=template,
-            input_variables=["context", "question"]
+            input_variables=["context", "question"],
+            partial_variables={"conversation_history": ""}
         )
 
         refine_template = """你必须严格基于上下文信息来改进答案。绝对禁止使用外部知识。
+
+{conversation_history}
 
 问题: {question}
 
@@ -142,7 +151,8 @@ class RAGAssistant:
 
         refine_prompt = PromptTemplate(
             template=refine_template,
-            input_variables=["context", "question", "existing_answer"]
+            input_variables=["context", "question", "existing_answer"],
+            partial_variables={"conversation_history": ""}
         )
         
         # 创建检索器
@@ -194,7 +204,15 @@ class RAGAssistant:
         
         return question  # 如果不需要优化，返回原始查询
     
-    def query(self, question: str, return_sources: bool = True, method: str = None, k: int = None, rerank: bool = False) -> dict:
+    def query(
+        self, 
+        question: str, 
+        return_sources: bool = True, 
+        method: str = None, 
+        k: int = None, 
+        rerank: bool = False,
+        conversation_history: Optional[List[ConversationMessage]] = None
+    ) -> dict:
         """查询知识库
 
         Args:
@@ -203,6 +221,7 @@ class RAGAssistant:
             method: 可选检索方法 ('vector'|'bm25'|'hybrid')
             k: 返回文档数量
             rerank: 是否使用 cross-encoder 精排
+            conversation_history: 对话历史列表
 
         Returns:
             包含答案和来源的字典
@@ -236,6 +255,27 @@ class RAGAssistant:
                         "sources": [],
                         "note": f"未找到相似度 >= {similarity_threshold} 的相关文档"
                     }
+        
+        # 准备对话历史上下文
+        conversation_context = ""
+        if conversation_history and len(conversation_history) > 0:
+            # 只取最近的几轮对话（默认最多3轮）
+            max_turns = 3
+            recent_history = conversation_history[-(max_turns * 2):] if len(conversation_history) > max_turns * 2 else conversation_history
+            
+            conversation_context = "【对话历史】\n"
+            for msg in recent_history:
+                role_name = "用户" if msg.role == "user" else "助手"
+                conversation_context += f"{role_name}: {msg.content}\n"
+            conversation_context += "\n"
+            
+            # 更新 prompt 的 partial_variables
+            if self.qa_chain and hasattr(self.qa_chain, 'combine_documents_chain'):
+                combine_chain = self.qa_chain.combine_documents_chain
+                if hasattr(combine_chain, 'initial_llm_chain') and hasattr(combine_chain.initial_llm_chain, 'prompt'):
+                    combine_chain.initial_llm_chain.prompt.partial_variables["conversation_history"] = conversation_context
+                if hasattr(combine_chain, 'refine_llm_chain') and hasattr(combine_chain.refine_llm_chain, 'prompt'):
+                    combine_chain.refine_llm_chain.prompt.partial_variables["conversation_history"] = conversation_context
 
         try:
             if docs_for_chain is None:

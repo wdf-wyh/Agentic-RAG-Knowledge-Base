@@ -27,6 +27,8 @@ from src.agent.tools.analysis_tools import (
 
 from src.core.vector_store import VectorStore
 from src.services.rag_assistant import RAGAssistant
+from src.services.conversation_manager import ConversationManager
+from src.models.schemas import ConversationMessage
 
 
 class RAGAgent(BaseAgent):
@@ -51,6 +53,7 @@ class RAGAgent(BaseAgent):
         enable_web_search: bool = True,
         enable_file_ops: bool = True,
         web_search_provider: str = "duckduckgo",
+        conversation_manager: ConversationManager = None,
     ):
         """初始化 RAG Agent
 
@@ -61,12 +64,17 @@ class RAGAgent(BaseAgent):
             enable_web_search: 是否启用网页搜索
             enable_file_ops: 是否启用文件操作
             web_search_provider: 搜索提供者 ('duckduckgo', 'tavily', 'serpapi')
+            conversation_manager: 对话管理器实例（可选）
         """
         self._vector_store = vector_store
         self._assistant = assistant
         self._enable_web_search = enable_web_search
         self._enable_file_ops = enable_file_ops
         self._web_search_provider = web_search_provider
+        
+        # 对话管理
+        self._conversation_manager = conversation_manager or ConversationManager()
+        self._current_conversation_id: Optional[str] = None
 
         super().__init__(config)
         self.setup_tools()
@@ -131,7 +139,45 @@ class RAGAgent(BaseAgent):
         if self.config.verbose:
             print(f"\n✓ RAG Agent 初始化完成，共注册 {len(self.tools)} 个工具")
 
-    def smart_query(self, question: str) -> AgentResponse:
+    def start_conversation(self) -> str:
+        """开始新的对话会话
+        
+        Returns:
+            会话ID
+        """
+        self._current_conversation_id = self._conversation_manager.create_conversation()
+        return self._current_conversation_id
+    
+    def set_conversation(self, conversation_id: str):
+        """设置当前会话ID
+        
+        Args:
+            conversation_id: 会话ID
+        """
+        self._current_conversation_id = conversation_id
+    
+    def get_conversation_history(self, max_messages: Optional[int] = None) -> List[ConversationMessage]:
+        """获取当前会话的历史消息
+        
+        Args:
+            max_messages: 最多返回的消息数量
+            
+        Returns:
+            消息列表
+        """
+        if not self._current_conversation_id:
+            return []
+        return self._conversation_manager.get_history(
+            self._current_conversation_id, 
+            max_messages=max_messages
+        )
+    
+    def clear_conversation(self):
+        """清空当前会话的历史"""
+        if self._current_conversation_id:
+            self._conversation_manager.clear_conversation(self._current_conversation_id)
+
+    def smart_query(self, question: str, save_to_history: bool = True) -> AgentResponse:
         """智能查询 - 自动判断最佳处理方式
 
         根据问题类型自动选择：
@@ -141,10 +187,17 @@ class RAGAgent(BaseAgent):
 
         Args:
             question: 用户问题
+            save_to_history: 是否保存到对话历史
 
         Returns:
             AgentResponse
         """
+        # 保存用户消息到历史
+        if save_to_history and self._current_conversation_id:
+            self._conversation_manager.add_message(
+                self._current_conversation_id, "user", question
+            )
+        
         # 简单问题检测（可以直接 RAG 回答）
         simple_indicators = ["是什么", "什么是", "怎么用", "如何", "为什么"]
         complex_indicators = [
@@ -166,16 +219,32 @@ class RAGAgent(BaseAgent):
             if rag_tool:
                 result = rag_tool.execute(query=question, generate_answer=True, top_k=5)
                 if result.success and result.output:
-                    return AgentResponse(
+                    response = AgentResponse(
                         success=True,
                         answer=result.output,
                         thought_process=[],
                         tools_used=["rag_search"],
                         iterations=1,
                     )
+                    
+                    # 保存助手回复到历史
+                    if save_to_history and self._current_conversation_id:
+                        self._conversation_manager.add_message(
+                            self._current_conversation_id, "assistant", result.output
+                        )
+                    
+                    return response
 
         # 复杂问题使用完整 Agent 推理
-        return self.run(question)
+        response = self.run(question)
+        
+        # 保存助手回复到历史
+        if save_to_history and self._current_conversation_id and response.success:
+            self._conversation_manager.add_message(
+                self._current_conversation_id, "assistant", response.answer
+            )
+        
+        return response
 
     def analyze_knowledge_base(self) -> AgentResponse:
         """分析知识库并提供优化建议

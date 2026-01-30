@@ -43,6 +43,15 @@
           </el-button>
 
           <el-button
+            type="default"
+            @click="startNewConversation"
+            class="mr-2"
+            :title="conversationId ? '开始新对话' : '当前是新对话'"
+          >
+            💬 新对话
+          </el-button>
+
+          <el-button
             type="text"
             @click="toggleTheme"
             class="mr-2"
@@ -346,6 +355,7 @@ export default {
       isDark: false,
       question: '',
       messages: [],
+      conversationId: null,  // 当前会诚ID
       status: { vector_store_loaded: false },
       settingsVisible: false,
       kbVisible: false,
@@ -667,6 +677,14 @@ export default {
         this.sendQuestion()
       }
     },
+    
+    // 开始新对话
+    startNewConversation() {
+      this.conversationId = null
+      this.messages = []
+      this.$message.success('已开始新对话')
+    },
+    
     async sendQuestion() {
       if (!this.question.trim() && !this.currentImageBase64) return
       
@@ -846,6 +864,27 @@ export default {
         if (this.provider && this.provider.trim()) {
           payload.provider = this.provider.trim()
         }
+        
+        // 添加对话历史 - 即使是null也传递，让后端决定是否创建新会话
+        payload.conversation_id = this.conversationId || null
+        console.log('[对话] 发送请求，当前conversationId:', this.conversationId)
+        
+        // 添加历史消息（只发送最近的6条消息，3轮对话）
+        // 注意：排除刚刚添加的当前用户消息（最后一条）
+        if (this.messages.length > 1) {
+          const history = this.messages
+            .slice(0, -1)  // 排除最后一条（当前用户消息）
+            .filter(m => m.finished && !m.isError)
+            .slice(-6)
+            .map(m => ({
+              role: m.role,
+              content: m.content
+            }))
+          if (history.length > 0) {
+            payload.history = history
+          }
+        }
+        
         if (this.provider === 'ollama') {
           if (this.ollamaModel && this.ollamaModel.trim()) {
             payload.ollama_model = this.ollamaModel.trim()
@@ -938,6 +977,12 @@ export default {
                       }
                     }
                     this.messages[msgIdx].sources = uniqueSources
+                  }
+                } else if (data.type === 'conversation_id') {
+                  // 保存会话ID
+                  if (!this.conversationId) {
+                    this.conversationId = data.data
+                    console.log('[对话] 创建新会话ID:', this.conversationId)
                   }
                 } else if (data.type === 'done') {
                   this.messages[msgIdx].finished = true
