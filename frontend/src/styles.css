@@ -244,7 +244,7 @@ body::before {
   border-bottom: 1px solid var(--border-light);
   padding: 16px 32px;
   box-shadow: var(--shadow-md);
-  z-index: 100;
+  z-index: 999;
   position: relative;
   transition: all var(--transition-base);
 }
@@ -1362,7 +1362,7 @@ body::before {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   transition: all var(--transition-base);
 }
 
@@ -3010,6 +3010,7 @@ html.dark .el-select-dropdown__item.is-selected.is-hovering {
   position: relative;
   min-width: 150px;
   user-select: none;
+  z-index: 1001;
 }
 
 .custom-select__trigger {
@@ -3060,13 +3061,14 @@ html.dark .el-select-dropdown__item.is-selected.is-hovering {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  z-index: 1000;
+  z-index: 9999;
   background: var(--bg-primary);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   animation: slideDown 0.2s ease-out;
+  min-width: 100%;
 }
 
 @keyframes slideDown {
