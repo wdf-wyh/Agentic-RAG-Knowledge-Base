@@ -54,7 +54,7 @@ class AgentQueryRequest(BaseModel):
     question: str = Field(..., description="用户问题或任务描述")
     agent_type: str = Field("full", description="Agent 类型: simple/full/research/manager")
     provider: Optional[str] = Field(None, description="模型提供者: deepseek/ollama/openai/gemini")
-    max_iterations: int = Field(10, description="最大推理迭代次数")
+    max_iterations: int = Field(5, description="最大推理迭代次数")
     enable_reflection: bool = Field(True, description="是否启用反思机制")
     enable_planning: bool = Field(True, description="是否启用规划能力")
     conversation_id: Optional[str] = Field(None, description="会话ID（用于多轮对话）")
@@ -72,9 +72,8 @@ class AgentQueryResponse(BaseModel):
 
 
 class SmartQueryRequest(BaseModel):
-    """智能查询请求"""
-    question: str
-    agent_type: str = "full"
+    """智能查询请求 - 大模型分析意图后自动选择处理方式"""
+    question: str = Field(..., description="用户问题")
     conversation_id: Optional[str] = Field(None, description="会话ID（用于多轮对话）")
 
 
@@ -234,9 +233,18 @@ async def agent_query(req: AgentQueryRequest):
 
 @router.post("/smart-query")
 async def smart_query(req: SmartQueryRequest):
-    """智能查询 - 自动判断使用 RAG 还是 Agent"""
+    """智能查询 - 使用大模型分析问题意图，自动选择最佳处理方式
+    
+    工作流程:
+    1. 大模型分析用户问题的意图
+    2. 根据意图决定使用什么工具（知识库/联网搜索/直接回答等）
+    3. 执行相应的处理流程并返回结果
+    """
+    start_time = time.time()
+    logger.info(f"[Smart Query] 开始处理 - 问题: {req.question[:100]}...")
+    
     try:
-        agent = get_or_create_agent(req.agent_type)
+        agent = get_or_create_agent("full")  # 智能模式使用完整 Agent
         
         # 如果提供了 conversation_id，设置当前会话
         if req.conversation_id:
@@ -256,15 +264,19 @@ async def smart_query(req: SmartQueryRequest):
                 save_to_history=False
             )
         
+        elapsed = time.time() - start_time
+        logger.info(f"[Smart Query] 完成 - 耗时: {elapsed:.2f}秒, 工具: {result.tools_used}")
+        
         return {
             "success": result.success,
             "answer": result.answer,
             "tools_used": result.tools_used,
             "iterations": result.iterations,
-            "is_simple": result.iterations == 1 and result.tools_used == ["rag_search"]
+            "is_simple": result.iterations == 1 and len(result.tools_used) <= 1
         }
         
     except Exception as e:
+        logger.error(f"[Smart Query] 失败: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

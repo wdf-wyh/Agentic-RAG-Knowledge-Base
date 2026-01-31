@@ -527,14 +527,11 @@ export default {
       historyLoading: false,
       
       // 查询模式
-      queryMode: 'rag',
+      queryMode: 'smart',
       modeDropdownOpen: false,
       modeOptions: [
-        { value: 'rag', label: '纯 RAG', icon: '', desc: '仅知识库检索，速度快' },
-        { value: 'smart', label: '智能处理', icon: '', desc: '自动判断用 RAG 还是 Agent' },
-        { value: 'full', label: '完整 Agent', icon: '', desc: '全功能推理+工具' },
-        { value: 'research', label: '网络模式', icon: '', desc: '强化网络搜索能力' },
-        { value: 'manager', label: '文件模式', icon: '', desc: '强化文件操作能力' }
+        { value: 'rag', label: '纯 RAG', icon: '📚', desc: '仅知识库检索，速度快' },
+        { value: 'smart', label: '智能模式', icon: '🧠', desc: '大模型分析问题，自动选择最佳工具' }
       ],
       
       // 模型提供者选项
@@ -657,13 +654,12 @@ export default {
         this.deepseekModel = settings.deepseekModel || ''
         this.deepseekApiUrl = settings.deepseekApiUrl || ''
         this.deepseekApiKey = settings.deepseekApiKey || ''
-        // 兼容旧配置
-        if (settings.queryMode) {
+        // 加载查询模式（只支持 rag 和 smart）
+        if (settings.queryMode === 'rag' || settings.queryMode === 'smart') {
           this.queryMode = settings.queryMode
-        } else if (settings.agentMode) {
-          this.queryMode = 'full'
         } else {
-          this.queryMode = 'rag'
+          // 其他旧模式统一转为智能模式
+          this.queryMode = 'smart'
         }
       }
     },
@@ -1158,10 +1154,9 @@ export default {
       // 根据模式选择不同的处理方式
       if (this.queryMode === 'rag') {
         await this.sendRagQuery(fullQuestion, imagesToSend)
-      } else if (this.queryMode === 'smart') {
-        await this.sendSmartQuery(fullQuestion, imagesToSend)
       } else {
-        await this.sendAgentQuery(fullQuestion, this.queryMode, imagesToSend)
+        // 智能模式 - 使用智能意图路由
+        await this.sendSmartQuery(fullQuestion, imagesToSend)
       }
     },
     
@@ -1273,15 +1268,15 @@ export default {
                 if (data.type === 'start') {
                   this.messages[msgIdx].content = '🤔 正在思考...\n'
                 } else if (data.type === 'iteration') {
-                  // 新的迭代开始
-                  if (!isStreamingAnswer) {
-                    this.messages[msgIdx].content = `🔄 迭代 ${data.data.iteration}/${data.data.max}\n`
-                  }
+                  // 新的迭代开始 - 不显示迭代信息
+                  // if (!isStreamingAnswer) {
+                  //   this.messages[msgIdx].content = `🔄 迭代 ${data.data.iteration}/${data.data.max}\n`
+                  // }
                 } else if (data.type === 'thinking_start') {
                   // 开始思考，重置当前思考内容
                   currentThinkingContent = ''
                   if (!isStreamingAnswer) {
-                    this.messages[msgIdx].content = '💭 正在推理...\n'
+                    this.messages[msgIdx].content = '💭 正在分析...'
                   }
                 } else if (data.type === 'thinking_end') {
                   // 思考完成，从 data.data 获取完整的思考内容
@@ -1309,9 +1304,10 @@ export default {
                   if (!this.messages[msgIdx].toolsUsed.includes(data.data.tool)) {
                     this.messages[msgIdx].toolsUsed.push(data.data.tool)
                   }
-                  if (!isStreamingAnswer) {
-                    this.messages[msgIdx].content = `🔧 使用工具: ${data.data.tool}\n`
-                  }
+                  // 不再显示"使用工具"的中间状态
+                  // if (!isStreamingAnswer) {
+                  //   this.messages[msgIdx].content = `🔧 使用工具: ${data.data.tool}\n`
+                  // }
                 } else if (data.type === 'observation') {
                   // 更新观察结果
                   const currentStep = this.messages[msgIdx].thoughtProcess.length - 1
@@ -1326,9 +1322,10 @@ export default {
                       this.messages[msgIdx].thoughtProcess[currentStep].observation = data.data
                     }
                   }
-                  if (!isStreamingAnswer) {
-                    this.messages[msgIdx].content = `📋 获取到工具结果...\n`
-                  }
+                  // 不再显示"获取到工具结果"的中间状态
+                  // if (!isStreamingAnswer) {
+                  //   this.messages[msgIdx].content = `📋 获取到工具结果...\n`
+                  // }
                 } else if (data.type === 'answer_start') {
                   // 开始流式输出答案
                   isStreamingAnswer = true

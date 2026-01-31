@@ -51,6 +51,7 @@ class RAGAssistant:
         model_name: str = None,
         temperature: float = None,
         max_tokens: int = None,
+        fast_mode: bool = None,  # 快速模式：使用stuff chain，速度更快
     ):
         """初始化 RAG 助手
         
@@ -59,8 +60,11 @@ class RAGAssistant:
             model_name: LLM 模型名称
             temperature: 温度参数
             max_tokens: 最大生成 token 数
+            fast_mode: 是否使用快速模式（使用stuff chain，默认从Config读取）
         """
         self.vector_store = vector_store or VectorStore()
+        # 如果没有明确指定，从Config读取
+        self.fast_mode = fast_mode if fast_mode is not None else Config.RAG_FAST_MODE
         
         # 初始化 LLM
         model = model_name or Config.LLM_MODEL
@@ -120,18 +124,42 @@ class RAGAssistant:
         if self.vector_store.vectorstore is None:
             raise ValueError("向量数据库未初始化，请先创建或加载数据库")
         
-        # 创建提示词模板（Refine chain 需要两个 prompt：question_prompt 和 refine_prompt）
+        # 创建提示词模板
         template = prompt_template or self.DEFAULT_PROMPT_TEMPLATE
         
-        # 创建一个部分模板，为 conversation_history 提供默认空值
         from langchain_core.prompts import PromptTemplate
-        question_prompt = PromptTemplate(
-            template=template,
-            input_variables=["context", "question"],
-            partial_variables={"conversation_history": ""}
-        )
+        
+        # 创建检索器
+        retriever = self.vector_store.get_retriever()
+        
+        # 根据是否启用快速模式选择不同的chain类型
+        if self.fast_mode:
+            # 快速模式：使用 stuff chain（单次调用，速度快）
+            question_prompt = PromptTemplate(
+                template=template,
+                input_variables=["context", "question"],
+                partial_variables={"conversation_history": ""}
+            )
+            
+            self.qa_chain = RetrievalQA.from_chain_type(
+                llm=self.llm,
+                chain_type="stuff",  # 更快的chain类型
+                retriever=retriever,
+                return_source_documents=True,
+                chain_type_kwargs={
+                    "prompt": question_prompt,
+                }
+            )
+            print("✓ 问答链初始化成功（快速模式）")
+        else:
+            # 标准模式：使用 refine chain（多次调用，精度更高）
+            question_prompt = PromptTemplate(
+                template=template,
+                input_variables=["context", "question"],
+                partial_variables={"conversation_history": ""}
+            )
 
-        refine_template = """你必须严格基于上下文信息来改进答案。绝对禁止使用外部知识。
+            refine_template = """你必须严格基于上下文信息来改进答案。绝对禁止使用外部知识。
 
 {conversation_history}
 
@@ -149,30 +177,25 @@ class RAGAssistant:
 
 改进后的回答:"""
 
-        refine_prompt = PromptTemplate(
-            template=refine_template,
-            input_variables=["context", "question", "existing_answer"],
-            partial_variables={"conversation_history": ""}
-        )
+            refine_prompt = PromptTemplate(
+                template=refine_template,
+                input_variables=["context", "question", "existing_answer"],
+                partial_variables={"conversation_history": ""}
+            )
+            
+            self.qa_chain = RetrievalQA.from_chain_type(
+                llm=self.llm,
+                chain_type="refine",
+                retriever=retriever,
+                return_source_documents=True,
+                chain_type_kwargs={
+                    "question_prompt": question_prompt,
+                    "refine_prompt": refine_prompt,
+                    "document_variable_name": "context",
+                }
+            )
+            print("✓ 问答链初始化成功（标准模式）")
         
-        # 创建检索器
-        retriever = self.vector_store.get_retriever()
-        
-        # 创建问答链
-        self.qa_chain = RetrievalQA.from_chain_type(
-            llm=self.llm,
-            chain_type="refine",
-            retriever=retriever,
-            return_source_documents=True,
-            chain_type_kwargs={
-                "question_prompt": question_prompt,
-                "refine_prompt": refine_prompt,
-                # 指定文档变量名为 `context`，与上面 PromptTemplate 的 input_variables 匹配
-                "document_variable_name": "context",
-            }
-        )
-        
-        print("✓ 问答链初始化成功")
         return self.qa_chain
     
     @staticmethod

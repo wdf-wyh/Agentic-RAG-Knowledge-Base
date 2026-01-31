@@ -532,12 +532,14 @@ class DeleteFileTool(BaseTool):
             import datetime
             modified_time = datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
             
+            dir_emoji = '📁 目录'
+            file_emoji = '📄 文件'
             info_parts = [
                 f"文件信息: {file_path}",
-                f"类型: {'\ud83d\udcc1 目录' if is_dir else '\ud83d\udcc4 文件'}",
+                f"类型: {dir_emoji if is_dir else file_emoji}",
                 f"大小: {stat.st_size} 字节",
                 f"修改时间: {modified_time}",
-                f"\n⚠️ 注意：删除功能已禁用，出于安全考虑。如需删除文件，请手动操作。"
+                "\n⚠️ 注意：删除功能已禁用，出于安全考虑。如需删除文件，请手动操作。"
             ]
             
             if is_dir:

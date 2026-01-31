@@ -59,7 +59,7 @@ def generate(
     }
 
     try:
-        resp = requests.post(endpoint, headers=headers, json=payload, timeout=120, stream=stream)
+        resp = requests.post(endpoint, headers=headers, json=payload, timeout=30, stream=stream)
     except requests.RequestException as e:
         raise DeepSeekError(f"请求 DeepSeek API 失败: {e}")
 

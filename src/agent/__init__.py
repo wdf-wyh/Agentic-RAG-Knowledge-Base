@@ -3,6 +3,7 @@
 from src.agent.base import BaseAgent, AgentConfig, StreamEvent
 from src.agent.rag_agent import RAGAgent
 from src.agent.tools.base import BaseTool, ToolResult
+from src.agent.intent_router import IntentRouter, IntentType, IntentAnalysis
 
 __all__ = [
     "BaseAgent",
@@ -11,4 +12,7 @@ __all__ = [
     "RAGAgent",
     "BaseTool",
     "ToolResult",
+    "IntentRouter",
+    "IntentType",
+    "IntentAnalysis",
 ]

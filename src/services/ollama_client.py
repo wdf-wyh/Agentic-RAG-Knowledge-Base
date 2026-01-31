@@ -44,7 +44,7 @@ def generate(
     }
 
     try:
-        resp = requests.post(endpoint, json=payload, timeout=120, stream=stream)
+        resp = requests.post(endpoint, json=payload, timeout=30, stream=stream)
     except requests.RequestException as e:
         raise OllamaError(f"请求 Ollama API 失败: {e}")
 

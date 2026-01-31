@@ -70,9 +70,9 @@ class Config:
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))
     
     # 检索配置
-    TOP_K = int(os.getenv("TOP_K", "3"))
+    TOP_K = int(os.getenv("TOP_K", "2"))  # 从3改为2以加快检索速度
     TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
-    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "1000"))
+    MAX_TOKENS = int(os.getenv("MAX_TOKENS", "800"))  # 从1000改为800以加快生成
     # 最大距离阈值（Chroma 返回的是距离，值越小表示越相似）
     # 如果为 None 或空字符串则不启用阈值过滤
     # 默认不启用距离阈值（避免在未明确配置时误过滤结果）
@@ -83,13 +83,16 @@ class Config:
         MAX_DISTANCE = None
     
     # 相似度得分阈值（0-1，值越高要求相似度越高）
-    # 默认 0.3：只返回相似度 >= 0.3 的文档
+    # 默认 0.2：只返回相似度 >= 0.2 的文档（从0.3降低到0.2以提高命中率）
     # 设置为 None 则禁用此过滤
-    _raw_similarity_threshold = os.getenv("SIMILARITY_THRESHOLD", "0.3").strip()
+    _raw_similarity_threshold = os.getenv("SIMILARITY_THRESHOLD", "0.2").strip()
     try:
         SIMILARITY_THRESHOLD = float(_raw_similarity_threshold) if _raw_similarity_threshold != "" else None
     except Exception:
-        SIMILARITY_THRESHOLD = 0.3
+        SIMILARITY_THRESHOLD = 0.2
+    
+    # RAG 性能优化配置
+    RAG_FAST_MODE = os.getenv("RAG_FAST_MODE", "true").lower() == "true"
     
     # 文档目录
     DOCUMENTS_PATH = "./documents"
