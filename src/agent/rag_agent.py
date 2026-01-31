@@ -147,6 +147,26 @@ class RAGAgent(BaseAgent):
         self.register_tool(DocumentAnalysisTool())
         self.register_tool(SummarizeTool())
         self.register_tool(GenerateReportTool())
+        
+        # 7. 新增企业级工具
+        try:
+            from src.agent.tools.memory_tools import MemoryTool
+            self.register_tool(MemoryTool())
+        except ImportError:
+            pass
+        
+        try:
+            from src.agent.tools.task_tools import TaskTool
+            self.register_tool(TaskTool())
+        except ImportError:
+            pass
+        
+        try:
+            from src.agent.tools.code_tools import CodeExecutorTool, DataAnalysisTool
+            self.register_tool(CodeExecutorTool(sandbox_mode=True))
+            self.register_tool(DataAnalysisTool())
+        except ImportError:
+            pass
 
         if self.config.verbose:
             print(f"\n✓ RAG Agent 初始化完成，共注册 {len(self.tools)} 个工具")

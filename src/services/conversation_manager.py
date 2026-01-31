@@ -5,12 +5,16 @@ from datetime import datetime
 import uuid
 import json
 from pathlib import Path
+from threading import Lock
 
 from src.models.schemas import ConversationMessage
 
 
 class ConversationManager:
-    """对话管理器，负责维护和管理对话历史"""
+    """对话管理器，负责维护和管理对话历史
+    
+    线程安全：使用 Lock 保护共享状态
+    """
     
     def __init__(self, storage_path: str = "./conversations"):
         """初始化对话管理器
@@ -24,6 +28,9 @@ class ConversationManager:
         # 内存中的活跃会话缓存
         self.active_sessions: Dict[str, List[ConversationMessage]] = {}
         
+        # 线程安全锁
+        self._lock = Lock()
+        
     def create_conversation(self) -> str:
         """创建新的对话会话
         
@@ -31,7 +38,8 @@ class ConversationManager:
             会话ID
         """
         conversation_id = str(uuid.uuid4())
-        self.active_sessions[conversation_id] = []
+        with self._lock:
+            self.active_sessions[conversation_id] = []
         return conversation_id
     
     def add_message(
@@ -52,8 +60,9 @@ class ConversationManager:
         Returns:
             添加的消息对象
         """
-        if conversation_id not in self.active_sessions:
-            self.active_sessions[conversation_id] = []
+        with self._lock:
+            if conversation_id not in self.active_sessions:
+                self.active_sessions[conversation_id] = []
         
         message = ConversationMessage(
             role=role,

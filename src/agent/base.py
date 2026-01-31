@@ -254,7 +254,29 @@ Step 2: [具体行动]
         
         # 匹配 Action 和 Action Input
         action_match = re.search(r'Action:\s*(\w+)', response)
-        input_match = re.search(r'Action Input:\s*(\{[^}]+\})', response, re.DOTALL)
+        
+        # 改进的 JSON 解析：支持嵌套对象
+        input_match = None
+        if 'Action Input:' in response:
+            # 找到 Action Input: 后的 JSON 对象
+            input_start = response.find('Action Input:') + len('Action Input:')
+            remaining = response[input_start:].strip()
+            
+            # 使用括号匹配来找到完整的 JSON
+            if remaining.startswith('{'):
+                brace_count = 0
+                json_end = 0
+                for i, char in enumerate(remaining):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                if json_end > 0:
+                    json_str = remaining[:json_end]
+                    input_match = type('obj', (object,), {'group': lambda self, x: json_str})()
         
         if action_match:
             action_name = action_match.group(1)
@@ -269,6 +291,15 @@ Step 2: [具体行动]
                     # 简单的键值对解析
                     pairs = re.findall(r'"(\w+)":\s*"([^"]*)"', input_text)
                     action_input = dict(pairs)
+                    # 也尝试解析数字和布尔值
+                    num_pairs = re.findall(r'"(\w+)":\s*(\d+(?:\.\d+)?)', input_text)
+                    for key, val in num_pairs:
+                        if key not in action_input:
+                            action_input[key] = float(val) if '.' in val else int(val)
+                    bool_pairs = re.findall(r'"(\w+)":\s*(true|false)', input_text, re.IGNORECASE)
+                    for key, val in bool_pairs:
+                        if key not in action_input:
+                            action_input[key] = val.lower() == 'true'
             
             return (action_name, action_input)
         

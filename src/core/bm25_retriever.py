@@ -47,10 +47,23 @@ class BM25Retriever:
         # 更新 docs 与 corpus 为清理后的对齐列表
         self.docs = cleaned_docs
         tokenized = [tokenize(t) for t in self.corpus]
-        self.bm25 = BM25Okapi(tokenized)
+        
+        # 安全处理：确保至少有一个文档，否则创建空的 BM25
+        if tokenized and any(len(tokens) > 0 for tokens in tokenized):
+            self.bm25 = BM25Okapi(tokenized)
+        else:
+            # 创建一个虚拟的 BM25 实例，返回空结果
+            self.bm25 = None
 
     def retrieve(self, query: str, k: int = 5) -> List[Any]:
+        # 如果没有有效的 BM25 实例，返回空列表
+        if self.bm25 is None or not self.docs:
+            return []
+        
         qtok = tokenize(query)
+        if not qtok:
+            return []
+        
         scores = self.bm25.get_scores(qtok)
         ranked_idx = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
         results = []
