@@ -187,8 +187,26 @@
                 <p v-else>{{ formatContent(msg.content) }}</p>
 
                 <!-- 图片显示 -->
-                <div v-if="msg.image" class="message-image">
+                <div v-if="msg.images && msg.images.length > 0" class="message-images">
+                  <img 
+                    v-for="(image, imgIdx) in msg.images" 
+                    :key="imgIdx"
+                    :src="image" 
+                    :alt="`图片 ${imgIdx + 1}`" 
+                  />
+                </div>
+                <!-- 单图片兼容 -->
+                <div v-else-if="msg.image" class="message-images">
                   <img :src="msg.image" :alt="'图片'" />
+                </div>
+                
+                <!-- 文件显示 -->
+                <div v-if="msg.files && msg.files.length > 0" class="message-files">
+                  <div v-for="(file, fIdx) in msg.files" :key="fIdx" class="message-file-item">
+                    <span class="file-icon-small">{{ getFileIcon(file.type) }}</span>
+                    <span class="file-name-small">{{ file.name }}</span>
+                    <span class="file-size-small">{{ formatFileSize(file.size) }}</span>
+                  </div>
                 </div>
               </div>
 
@@ -258,29 +276,76 @@
             <div class="input-actions">
               <el-button
                 type="text"
-                :icon="PictureFilled"
                 @click="triggerImageInput"
-                title="粘贴或上传图片"
-              />
+                title="上传图片"
+                class="upload-image-btn"
+              >
+                <span class="upload-icon">+</span>
+              </el-button>
+              <el-button
+                type="text"
+                @click="triggerChatFileInput"
+                title="上传文件"
+                class="upload-file-btn"
+              >
+                <span class="upload-icon">📎</span>
+              </el-button>
               <input
                 ref="imageInput"
                 type="file"
                 accept="image/*"
+                multiple
                 style="display: none"
                 @change="handleImageSelect"
+              />
+              <input
+                ref="fileInput2"
+                type="file"
+                accept=".pdf,.doc,.docx,.txt,.md,.json,.csv,.xls,.xlsx"
+                multiple
+                style="display: none"
+                @change="handleFileAttach"
               />
             </div>
             <div class="input-box">
               <!-- 图片预览 -->
-              <div v-if="currentImageBase64" class="image-preview">
-                <img :src="currentImageBase64" :alt="'预览图片'" />
-                <el-button
-                  type="text"
-                  @click="currentImageBase64 = null"
-                  class="remove-image"
+              <div v-if="uploadedImages.length > 0" class="images-preview-container">
+                <div 
+                  v-for="(img, idx) in uploadedImages" 
+                  :key="idx" 
+                  class="image-preview-item"
                 >
-                  ✕
-                </el-button>
+                  <img :src="img" :alt="`预览图片 ${idx + 1}`" />
+                  <el-button
+                    type="text"
+                    @click="removeImage(idx)"
+                    class="remove-image"
+                  >
+                    ✕
+                  </el-button>
+                </div>
+              </div>
+              
+              <!-- 文件预览 -->
+              <div v-if="attachedFiles && attachedFiles.length > 0" class="files-preview-container">
+                <div 
+                  v-for="(file, idx) in attachedFiles" 
+                  :key="`file-${idx}-${file.name}`" 
+                  class="file-preview-item"
+                >
+                  <span class="file-icon">{{ getFileIcon(file && file.type) }}</span>
+                  <div class="file-info">
+                    <span class="file-name">{{ file && file.name || '未知文件' }}</span>
+                    <span class="file-size">{{ file && file.size ? formatFileSize(file.size) : '' }}</span>
+                  </div>
+                  <el-button
+                    type="text"
+                    @click="removeFile(idx)"
+                    class="remove-file"
+                  >
+                    ✕
+                  </el-button>
+                </div>
               </div>
               <el-input
                 v-model="question"
@@ -507,7 +572,10 @@ export default {
       progressInterval: null,
       
       // 图片数据
-      currentImageBase64: null
+      uploadedImages: [],
+      
+      // 附件数据
+      attachedFiles: []
     }
   },
   computed: {
@@ -694,6 +762,111 @@ export default {
     triggerImageInput() {
       this.$refs.imageInput.click()
     },
+    triggerChatFileInput() {
+      this.$refs.fileInput2.click()
+    },
+    async handleFileAttach(e) {
+      const files = e.target.files
+      if (files && files.length > 0) {
+        let addedCount = 0
+        for (let file of files) {
+          // 限制文件大小（10MB）
+          if (file.size > 10 * 1024 * 1024) {
+            this.$message.warning(`文件 ${file.name} 超过10MB，已跳过`)
+            continue
+          }
+          
+          try {
+            // 读取文件内容
+            const content = await this.readFileContent(file)
+            this.attachedFiles.push({
+              name: file.name,
+              type: file.type || this.getFileTypeFromName(file.name),
+              size: file.size,
+              content: content
+            })
+            addedCount++
+          } catch (err) {
+            console.error('文件读取失败:', file.name, err)
+            this.$message.error(`文件 ${file.name} 读取失败`)
+          }
+        }
+        if (addedCount > 0) {
+          this.$message.success(`已添加 ${addedCount} 个文件`)
+        }
+      }
+      // 清空input，允许重复上传同一个文件
+      if (this.$refs.fileInput2) {
+        this.$refs.fileInput2.value = ''
+      }
+    },
+    async readFileContent(file) {
+      return new Promise((resolve, reject) => {
+        // 根据文件类型选择读取方式
+        const isTextFile = file.type.startsWith('text/') || 
+            file.name.endsWith('.txt') || 
+            file.name.endsWith('.md') || 
+            file.name.endsWith('.json') ||
+            file.name.endsWith('.csv')
+        
+        if (!isTextFile) {
+          // 对于二进制文件（PDF, DOCX等），只保存文件信息，不读取内容
+          resolve('[二进制文件: ' + file.name + ']')
+          return
+        }
+        
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const content = e.target.result
+          // 对于文本文件，截取前8000字符以节省token
+          if (typeof content === 'string') {
+            const truncated = content.substring(0, 8000)
+            if (content.length > 8000) {
+              resolve(truncated + '\n\n[文件内容已截断，仅保留前8000字符]')
+            } else {
+              resolve(truncated)
+            }
+          } else {
+            resolve(String(content))
+          }
+        }
+        reader.onerror = () => {
+          resolve('[无法读取文件: ' + file.name + ']')
+        }
+        
+        reader.readAsText(file)
+      })
+    },
+    getFileTypeFromName(filename) {
+      const ext = filename.split('.').pop().toLowerCase()
+      const types = {
+        'txt': 'text/plain',
+        'md': 'text/markdown',
+        'json': 'application/json',
+        'csv': 'text/csv',
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }
+      return types[ext] || 'application/octet-stream'
+    },
+    getFileIcon(type) {
+      if (!type) return '📎'
+      const t = String(type).toLowerCase()
+      if (t.includes('pdf')) return '📄'
+      if (t.includes('word') || t.includes('doc')) return '📝'
+      if (t.includes('excel') || t.includes('sheet')) return '📊'
+      if (t.includes('text') || t.includes('markdown')) return '📃'
+      if (t.includes('json')) return '📋'
+      if (t.includes('csv')) return '📈'
+      return '📎'
+    },
+    removeFile(index) {
+      this.attachedFiles.splice(index, 1)
+      this.$message.success('文件已移除')
+    },
     async handleFileSelect(e) {
       const files = e.target.files
       for (let file of files) {
@@ -722,10 +895,11 @@ export default {
       }
     },
     formatFileSize(bytes) {
-      if (bytes === 0) return '0 B'
+      if (!bytes || bytes === 0) return '0 B'
+      if (typeof bytes !== 'number' || isNaN(bytes)) return '-'
       const k = 1024
       const sizes = ['B', 'KB', 'MB', 'GB']
-      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1)
       return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
     },
     async startBuild() {
@@ -772,31 +946,41 @@ export default {
       }, 500)
     },
     async handleImageSelect(e) {
-      const file = e.target.files[0]
-      if (file) {
-        const reader = new FileReader()
-        reader.onload = (event) => {
-          this.currentImageBase64 = event.target.result
-          this.$message.success('图片已加载，您可以在提问时发送')
+      const files = e.target.files
+      if (files && files.length > 0) {
+        for (let file of files) {
+          const reader = new FileReader()
+          reader.onload = (event) => {
+            this.uploadedImages.push(event.target.result)
+          }
+          reader.readAsDataURL(file)
         }
-        reader.readAsDataURL(file)
+        this.$message.success(`已加载 ${files.length} 张图片`)
       }
       this.$refs.imageInput.value = ''
+    },
+    removeImage(index) {
+      this.uploadedImages.splice(index, 1)
+      this.$message.success('图片已移除')
     },
     handlePaste(e) {
       const items = e.clipboardData?.items
       if (items) {
+        let imageCount = 0
         for (let item of items) {
           if (item.type.indexOf('image') !== -1) {
             e.preventDefault()
             const file = item.getAsFile()
             const reader = new FileReader()
             reader.onload = (event) => {
-              this.currentImageBase64 = event.target.result
-              this.$message.success('图片已从剪贴板加载')
+              this.uploadedImages.push(event.target.result)
             }
             reader.readAsDataURL(file)
+            imageCount++
           }
+        }
+        if (imageCount > 0) {
+          this.$message.success(`已从剪贴板加载 ${imageCount} 张图片`)
         }
       }
     },
@@ -930,30 +1114,54 @@ export default {
     },
     
     async sendQuestion() {
-      if (!this.question.trim() && !this.currentImageBase64) return
+      if (!this.question.trim() && this.uploadedImages.length === 0 && this.attachedFiles.length === 0) return
       
       const q = this.question.trim()
-      this.messages.push({
+      
+      // 如果有附件，将文件内容附加到问题中
+      let fullQuestion = q
+      if (this.attachedFiles.length > 0) {
+        fullQuestion += '\n\n--- 附件内容 ---\n'
+        for (const file of this.attachedFiles) {
+          fullQuestion += `\n[${file.name}]:\n${file.content}\n`
+        }
+      }
+      
+      // 添加用户消息，包含所有图片和文件
+      const userMessage = {
         role: 'user',
         content: q,
-        image: this.currentImageBase64,
         finished: true
-      })
+      }
+      
+      // 如果有图片，添加到消息中
+      if (this.uploadedImages.length > 0) {
+        userMessage.images = [...this.uploadedImages]
+      }
+      
+      // 如果有文件，添加到消息中
+      if (this.attachedFiles.length > 0) {
+        userMessage.files = this.attachedFiles.map(f => ({ name: f.name, size: f.size, type: f.type }))
+      }
+      
+      this.messages.push(userMessage)
       
       // 保存配置
       this.saveSettings()
       this.question = ''
-      const imageToSend = this.currentImageBase64
-      this.currentImageBase64 = null
+      const imagesToSend = [...this.uploadedImages]
+      const filesToSend = [...this.attachedFiles]
+      this.uploadedImages = []  // 清空已上传图片
+      this.attachedFiles = []  // 清空已附加文件
       this.messageLoading = true
       
       // 根据模式选择不同的处理方式
       if (this.queryMode === 'rag') {
-        await this.sendRagQuery(q)
+        await this.sendRagQuery(fullQuestion, imagesToSend)
       } else if (this.queryMode === 'smart') {
-        await this.sendSmartQuery(q)
+        await this.sendSmartQuery(fullQuestion, imagesToSend)
       } else {
-        await this.sendAgentQuery(q, this.queryMode)
+        await this.sendAgentQuery(fullQuestion, this.queryMode, imagesToSend)
       }
     },
     
