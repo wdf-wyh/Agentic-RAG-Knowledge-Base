@@ -19,6 +19,7 @@ from src.agent.tools.file_tools import (
 from src.agent.tools.web_tools import WebSearchTool
 from src.agent.tools.trending_tools import BaiduTrendingTool, TrendingNewsAggregatorTool
 from src.agent.tools.analysis_tools import DocumentAnalysisTool, SummarizeTool
+from src.agent.tools.image_tools import ImageAnalysisTool, BatchImageAnalysisTool
 from src.agent.tools.notification_tools import (
     SystemNotifyTool,
     SoundAlertTool,
@@ -53,6 +54,9 @@ __all__ = [
     # 分析工具
     "DocumentAnalysisTool",
     "SummarizeTool",
+    # 图像分析工具
+    "ImageAnalysisTool",
+    "BatchImageAnalysisTool",
     # 通知工具
     "SystemNotifyTool",
     "SoundAlertTool",

@@ -57,7 +57,8 @@ class VectorStore:
 
             class LocalEmbeddings:
                 """本地 Embeddings 适配器，提供 embed_documents 与 embed_query 方法"""
-                def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+                def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5"):
+                    # 使用支持中文的嵌入模型，提升中文语义检索效果
                     self.model = SentenceTransformer(model_name)
 
                 def embed_documents(self, texts):
@@ -249,6 +250,29 @@ class VectorStore:
         if self.vectorstore is not None:
             self.vectorstore.delete_collection()
             print("✓ 向量数据库已删除")
+    
+    def get_document_list(self) -> List[str]:
+        """获取知识库中所有文档的列表
+        
+        Returns:
+            文档来源路径列表（去重）
+        """
+        if self.vectorstore is None:
+            self.load_vectorstore()
+        
+        if self.vectorstore is None:
+            return []
+        
+        try:
+            collection = self.vectorstore._collection
+            all_docs = collection.get(include=['metadatas'])
+            sources = set()
+            for meta in all_docs.get('metadatas', []):
+                if meta and 'source' in meta:
+                    sources.add(meta['source'])
+            return sorted(list(sources))
+        except Exception:
+            return []
     
     def get_retriever(self, k: int = None):
         """获取检索器

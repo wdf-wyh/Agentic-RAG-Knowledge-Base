@@ -4,7 +4,7 @@ import json
 import re
 import logging
 import time
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Generator, AsyncGenerator
 from dataclasses import dataclass, field
 from enum import Enum
 from abc import ABC, abstractmethod
@@ -12,6 +12,14 @@ from datetime import datetime
 import pytz
 
 from src.config.settings import Config
+
+
+@dataclass
+class StreamEvent:
+    """流式事件"""
+    type: str  # 'thinking', 'action', 'observation', 'answer', 'token', 'error', 'done'
+    data: Any = None
+    step: int = 0
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -31,11 +39,12 @@ class AgentState(Enum):
 @dataclass
 class AgentConfig:
     """Agent 配置"""
-    max_iterations: int = 10  # 最大推理迭代次数
+    max_iterations: int = 5  # 最大推理迭代次数（优化：从10降到5以加快响应）
     temperature: float = 0.7
-    enable_reflection: bool = True  # 启用反思机制
+    enable_reflection: bool = False  # 启用反思机制（优化：关闭以加快响应）
     enable_planning: bool = True    # 启用规划能力
     verbose: bool = True            # 详细输出
+    llm_timeout: int = 30           # LLM请求超时时间（秒）
     
 
 @dataclass
@@ -67,30 +76,43 @@ class BaseAgent(ABC):
     # ReAct 提示词模板
     REACT_PROMPT = """你是一个知识库助手，具备多种工具和能力。请按照以下格式进行推理和行动：
 
+【系统信息】
+当前日期和时间: {current_datetime}
+
+【历史对话上下文】
+{chat_history}
+
 【可用工具】
 {tools_description}
 
 【核心原则 - 必须严格遵守】
-1. 你必须优先使用 rag_search 工具查询本地知识库
-2. 回答必须且只能基于工具返回的实际结果，绝对禁止使用你自己的知识或常识
-3. 如果检索结果中没有相关信息，必须明确告知用户"知识库中没有找到相关信息"
-4. 绝对禁止编造任何内容，包括来源名称、URL、数据等
+1. **首先检查历史对话**：如果用户问题涉及之前的对话内容（如"我刚才问了什么"、"上一个问题"等），直接从【历史对话上下文】中查找答案，不要使用任何工具
+2. **实时信息必须重新查询**：对于天气、新闻、股价等实时信息，即使历史对话中有答案，也必须重新执行 web_search 获取最新数据
+3. 对于知识查询问题，优先使用 rag_search 工具查询本地知识库
+4. 回答必须且只能基于工具返回的实际结果或历史对话，绝对禁止使用你自己的知识或常识
+5. 如果检索结果中没有相关信息，必须明确告知用户"知识库中没有找到相关信息"
+6. 绝对禁止编造任何内容，包括来源名称、URL、数据等
 
 【来源引用规则 - 极其重要】
-1. 如果使用了 web_search，必须在回答中附上工具返回的真实 URL 链接
-2. 如果使用了 rag_search，必须标明来源文件名（从 Observation 中获取）
-3. 绝对禁止编造来源名称，如"XX词典"、"XX论坛"等虚假来源
-4. 只有在 Observation 中明确出现的 URL 或文件名才能作为来源引用
+1. 如果回答来自历史对话，标注"来源: 对话历史"
+2. 如果使用了 web_search，必须在回答中附上工具返回的真实 URL 链接
+3. 如果使用了 rag_search，必须标明来源文件名（从 Observation 中获取）
+4. 绝对禁止编造来源名称，如"XX词典"、"XX论坛"等虚假来源
+5. 只有在 Observation 中明确出现的 URL 或文件名才能作为来源引用
 
 【重要规则】
 1. 你必须严格按照 Thought -> Action -> Observation 的格式输出
-2. 每次只能执行一个 Action
-3. 根据 Observation 结果决定下一步行动
-4. 只有当 Observation 中明确包含答案时，才输出 Final Answer
-5. 如果遇到错误，尝试换一种方法
+2. 如果问题涉及历史对话，无需使用工具，直接输出 Final Answer
+3. 每次只能执行一个 Action
+4. 根据 Observation 结果决定下一步行动
+5. 只有当 Observation 中明确包含答案时，才输出 Final Answer
+6. 如果遇到错误，尝试换一种方法
+7. **即使历史对话中显示之前查询失败，也要重新执行工具调用获取最新信息**
+8. **对于天气、新闻等实时信息，必须使用 web_search 而不是 rag_search**
+9. **每次查询都是独立的，不要因为历史中有负面结果就直接回答失败**
 
 【输出格式】
-Thought: [你的思考过程，分析问题需要什么信息]
+Thought: [你的思考过程，首先检查是否能从历史对话中找到答案]
 Action: [工具名称]
 Action Input: {{"param1": "value1", "param2": "value2"}}
 
@@ -99,6 +121,11 @@ Observation: [工具返回的结果]
 
 Thought: [根据观察结果的进一步思考，必须分析 Observation 是否包含答案]
 ...
+
+当能从历史对话中直接回答时：
+Thought: 这个问题涉及历史对话，我可以从【历史对话上下文】中直接找到答案
+Final Answer: [基于历史对话的答案]
+来源: 对话历史
 
 当 Observation 中包含明确答案时：
 Thought: 我在工具返回的结果中找到了相关信息，可以基于此回答问题
@@ -109,16 +136,10 @@ Final Answer: [基于 Observation 的答案]
 Thought: 工具返回的结果中没有找到与问题相关的信息
 Final Answer: 抱歉，未能找到关于这个问题的相关信息。
 
-【历史对话】
-{chat_history}
-
-【系统信息】
-当前日期和时间: {current_datetime}
-
 【当前任务】
 用户问题: {question}
 
-请开始推理（记住：答案和来源必须完全来自工具返回的 Observation，禁止编造）："""
+请开始推理（记住：优先检查历史对话，答案和来源必须完全来自历史对话或工具返回的 Observation，禁止编造）："""
 
     REFLECTION_PROMPT = """请反思以下回答的质量：
 
@@ -164,9 +185,14 @@ Step 2: [具体行动]
         self.state = AgentState.IDLE
         self.thought_history: List[ThoughtStep] = []
         self.llm = self._init_llm()
+        self.llm_streaming = self._init_llm(streaming=True)
         
-    def _init_llm(self):
-        """初始化 LLM"""
+    def _init_llm(self, streaming: bool = False):
+        """初始化 LLM
+        
+        Args:
+            streaming: 是否启用流式输出
+        """
         if Config.MODEL_PROVIDER == "ollama":
             from langchain_community.llms import Ollama
             return Ollama(
@@ -180,6 +206,7 @@ Step 2: [具体行动]
                 model=Config.LLM_MODEL,
                 temperature=self.config.temperature,
                 api_key=Config.DEEPSEEK_API_KEY,
+                streaming=streaming,
             )
         else:
             from langchain.chat_models import init_chat_model
@@ -187,6 +214,7 @@ Step 2: [具体行动]
                 Config.LLM_MODEL,
                 temperature=self.config.temperature,
                 model_provider=Config.MODEL_PROVIDER,
+                streaming=streaming,
             )
     
     def register_tool(self, tool: 'BaseTool'):
@@ -218,14 +246,37 @@ Step 2: [具体行动]
         Returns:
             (action_name, action_input) 或 (None, None)
         """
-        # 匹配 Final Answer
-        final_match = re.search(r'Final Answer:\s*(.+?)(?=\n\n|$)', response, re.DOTALL)
+        # 匹配 Final Answer - 使用贪婪匹配获取完整答案内容
+        # 从 "Final Answer:" 开始一直匹配到字符串末尾
+        final_match = re.search(r'Final Answer:\s*(.+)', response, re.DOTALL)
         if final_match:
             return ("__final__", final_match.group(1).strip())
         
         # 匹配 Action 和 Action Input
         action_match = re.search(r'Action:\s*(\w+)', response)
-        input_match = re.search(r'Action Input:\s*(\{[^}]+\})', response, re.DOTALL)
+        
+        # 改进的 JSON 解析：支持嵌套对象
+        input_match = None
+        if 'Action Input:' in response:
+            # 找到 Action Input: 后的 JSON 对象
+            input_start = response.find('Action Input:') + len('Action Input:')
+            remaining = response[input_start:].strip()
+            
+            # 使用括号匹配来找到完整的 JSON
+            if remaining.startswith('{'):
+                brace_count = 0
+                json_end = 0
+                for i, char in enumerate(remaining):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            json_end = i + 1
+                            break
+                if json_end > 0:
+                    json_str = remaining[:json_end]
+                    input_match = type('obj', (object,), {'group': lambda self, x: json_str})()
         
         if action_match:
             action_name = action_match.group(1)
@@ -240,6 +291,15 @@ Step 2: [具体行动]
                     # 简单的键值对解析
                     pairs = re.findall(r'"(\w+)":\s*"([^"]*)"', input_text)
                     action_input = dict(pairs)
+                    # 也尝试解析数字和布尔值
+                    num_pairs = re.findall(r'"(\w+)":\s*(\d+(?:\.\d+)?)', input_text)
+                    for key, val in num_pairs:
+                        if key not in action_input:
+                            action_input[key] = float(val) if '.' in val else int(val)
+                    bool_pairs = re.findall(r'"(\w+)":\s*(true|false)', input_text, re.IGNORECASE)
+                    for key, val in bool_pairs:
+                        if key not in action_input:
+                            action_input[key] = val.lower() == 'true'
             
             return (action_name, action_input)
         
@@ -487,6 +547,180 @@ Step 2: [具体行动]
         
         total_elapsed = time.time() - start_time
         logger.info(f"[Agent] 执行完成 - 总耗时: {total_elapsed:.2f}秒, 迭代次数: {iterations}, 使用工具: {list(set(tools_used))}")
+        
+        return AgentResponse(
+            success=final_answer is not None,
+            answer=final_answer or "无法得出答案，已达到最大迭代次数",
+            thought_process=self.thought_history,
+            tools_used=list(set(tools_used)),
+            iterations=iterations,
+            final_reflection=reflection_result
+        )
+    
+    def run_stream(self, question: str, chat_history: str = "") -> Generator[StreamEvent, None, AgentResponse]:
+        """流式运行 Agent 推理循环
+        
+        Args:
+            question: 用户问题
+            chat_history: 历史对话
+            
+        Yields:
+            StreamEvent 事件，包含实时的推理过程
+            
+        Returns:
+            Agent 响应结果
+        """
+        start_time = time.time()
+        logger.info(f"[Agent Stream] 开始执行 - 问题: {question[:100]}...")
+        
+        self.state = AgentState.THINKING
+        self.thought_history = []
+        tools_used = []
+        
+        # 获取当前日期和时间（中国时区）
+        tz = pytz.timezone('Asia/Shanghai')
+        current_datetime = datetime.now(tz).strftime("%Y年%m月%d日 %H:%M:%S")
+        
+        # 构建初始提示
+        prompt = self.REACT_PROMPT.format(
+            tools_description=self.get_tools_description(),
+            chat_history=chat_history or "无",
+            current_datetime=current_datetime,
+            question=question
+        )
+        
+        current_prompt = prompt
+        iterations = 0
+        final_answer = None
+        
+        yield StreamEvent(type='start', data='开始推理...')
+        
+        while iterations < self.config.max_iterations:
+            iterations += 1
+            
+            yield StreamEvent(type='iteration', data={'iteration': iterations, 'max': self.config.max_iterations}, step=iterations)
+            
+            # 流式调用 LLM
+            try:
+                llm_output = ""
+                yield StreamEvent(type='thinking_start', step=iterations)
+                
+                # 使用流式 LLM
+                is_final_answer = False  # 标记是否进入 Final Answer 阶段
+                final_answer_buffer = ""  # 累积最终答案
+                
+                for chunk in self.llm_streaming.stream(current_prompt):
+                    # 处理不同类型的响应
+                    if isinstance(chunk, str):
+                        token = chunk
+                    elif hasattr(chunk, 'content'):
+                        token = chunk.content
+                    else:
+                        token = str(chunk)
+                    
+                    llm_output += token
+                    
+                    # 检测是否进入 Final Answer 阶段
+                    if not is_final_answer and "Final Answer:" in llm_output:
+                        is_final_answer = True
+                        # 提取 Final Answer 之后的部分
+                        final_start = llm_output.find("Final Answer:")
+                        final_answer_buffer = llm_output[final_start + len("Final Answer:"):].lstrip()
+                        yield StreamEvent(type='answer_start', step=iterations)
+                        # 发送已有的答案部分
+                        if final_answer_buffer:
+                            yield StreamEvent(type='answer_token', data=final_answer_buffer, step=iterations)
+                    elif is_final_answer:
+                        # 已经在 Final Answer 阶段，流式输出答案 token
+                        final_answer_buffer += token
+                        yield StreamEvent(type='answer_token', data=token, step=iterations)
+                    else:
+                        # 思考过程，发送状态更新（不逐字输出）
+                        pass
+                
+                yield StreamEvent(type='thinking_end', data=llm_output, step=iterations)
+                
+            except Exception as e:
+                self.state = AgentState.ERROR
+                logger.error(f"[Agent Stream] LLM调用失败: {str(e)}")
+                yield StreamEvent(type='error', data=f"LLM 调用失败: {str(e)}")
+                return AgentResponse(
+                    success=False,
+                    answer=f"LLM 调用失败: {str(e)}",
+                    thought_process=self.thought_history,
+                    tools_used=tools_used,
+                    iterations=iterations
+                )
+            
+            # 解析动作
+            action_name, action_input = self._parse_action(llm_output)
+            
+            # 记录思考步骤
+            thought_match = re.search(r'Thought:\s*(.+?)(?=Action:|Final Answer:|$)', llm_output, re.DOTALL)
+            thought_step = ThoughtStep(
+                step=iterations,
+                thought=thought_match.group(1).strip() if thought_match else llm_output,
+                action=action_name,
+                action_input=action_input if action_name != "__final__" else None
+            )
+            
+            # 检查是否是最终答案
+            if action_name == "__final__":
+                final_answer = action_input
+                thought_step.observation = "已得出最终答案"
+                self.thought_history.append(thought_step)
+                
+                yield StreamEvent(type='answer', data=final_answer, step=iterations)
+                break
+            
+            # 执行工具
+            if action_name:
+                self.state = AgentState.ACTING
+                
+                yield StreamEvent(type='action', data={'tool': action_name, 'input': action_input}, step=iterations)
+                
+                logger.info(f"[Agent Stream] 执行工具: {action_name}")
+                observation_text, structured_data = self._execute_action(action_name, action_input)
+                
+                thought_step.observation = observation_text
+                thought_step.observation_data = structured_data
+                tools_used.append(action_name)
+                
+                yield StreamEvent(type='observation', data={'text': observation_text[:500], 'data': structured_data}, step=iterations)
+                
+                # 更新提示
+                current_prompt = f"{current_prompt}\n\n{llm_output}\n\nObservation: {observation_text}\n\n请继续推理："
+            else:
+                thought_step.observation = "未识别到有效动作，请按格式输出 Action 或 Final Answer"
+                current_prompt = f"{current_prompt}\n\n{llm_output}\n\n请按照正确格式输出 Action 或 Final Answer："
+            
+            self.thought_history.append(thought_step)
+            self.state = AgentState.THINKING
+        
+        # 反思检查
+        reflection_result = None
+        if final_answer and self.config.enable_reflection:
+            self.state = AgentState.REFLECTING
+            yield StreamEvent(type='reflecting', data='正在反思检查...')
+            
+            approved, suggestion = self._reflect(question, final_answer, tools_used)
+            
+            if not approved and suggestion:
+                reflection_result = suggestion
+                yield StreamEvent(type='reflection_result', data=suggestion)
+        
+        self.state = AgentState.COMPLETED
+        
+        total_elapsed = time.time() - start_time
+        logger.info(f"[Agent Stream] 执行完成 - 总耗时: {total_elapsed:.2f}秒")
+        
+        yield StreamEvent(type='meta', data={
+            'tools_used': list(set(tools_used)),
+            'iterations': iterations,
+            'elapsed': total_elapsed
+        })
+        
+        yield StreamEvent(type='done')
         
         return AgentResponse(
             success=final_answer is not None,

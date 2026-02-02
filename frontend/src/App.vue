@@ -4,9 +4,9 @@
     <header class="app-header">
       <div class="header-content">
         <div class="logo-section">
-          <!-- <div class="logo-icon">📚</div> -->
+          <div class="logo-icon floating">✨</div>
           <div class="logo-text">
-            <h1> 知识库</h1>
+            <h1 class="gradient-text">Agent 知识库</h1>
             <p>智能知识检索助手</p>
           </div>
         </div>
@@ -18,46 +18,67 @@
             </span> -->
           </div>
           <!-- 模式选择 -->
-          <el-select
-            v-model="queryMode"
-            class="mode-select mr-3"
-            @change="onModeChange"
-            style="width: 140px"
-          >
-            <el-option
-              v-for="mode in modeOptions"
-              :key="mode.value"
-              :label="mode.label"
-              :value="mode.value"
-            >
-              <span>{{ mode.icon }} {{ mode.label }}</span>
-            </el-option>
-          </el-select>
+          <div class="custom-select mr-3" :class="{ 'is-open': modeDropdownOpen }" v-click-outside="() => modeDropdownOpen = false">
+            <div class="custom-select__trigger" @click="modeDropdownOpen = !modeDropdownOpen">
+              <span class="custom-select__value">{{ currentModeLabel }}</span>
+              <span class="custom-select__arrow">▾</span>
+            </div>
+            <div class="custom-select__dropdown" v-show="modeDropdownOpen">
+              <div
+                v-for="mode in modeOptions"
+                :key="mode.value"
+                class="custom-select__option"
+                :class="{ 'is-selected': queryMode === mode.value }"
+                @click="selectMode(mode.value)"
+              >
+                {{ mode.icon }} {{ mode.label }}
+              </div>
+            </div>
+          </div>
           
           <el-button
             type="primary"
             @click="kbVisible = true"
-            class="mr-2"
+            class="mr-2 hover-lift"
           >
-            知识库
+            📚 知识库
+          </el-button>
+
+          <el-button
+            type="default"
+            @click="historyVisible = true"
+            class="mr-2 hover-lift"
+            title="查看对话历史"
+          >
+            📜 历史
+          </el-button>
+
+          <el-button
+            type="default"
+            @click="startNewConversation"
+            class="mr-2 hover-lift"
+            :title="conversationId ? '开始新对话' : '当前是新对话'"
+          >
+            ✨ 新对话
           </el-button>
 
           <el-button
             type="text"
             @click="toggleTheme"
-            class="mr-2"
+            class="mr-2 theme-toggle-btn"
             :title="isDark ? '切换到浅色模式' : '切换到深色模式'"
           >
-            <span v-if="isDark">☀️</span>
-            <span v-else>🌙</span>
+            <span v-if="isDark" class="theme-icon">☀️</span>
+            <span v-else class="theme-icon">🌙</span>
           </el-button>
 
           <el-button
             type="primary"
             :icon="Setting"
             @click="settingsVisible = true"
+            class="hover-lift"
           >
-            模型设置
+            ⚙️ 设置
           </el-button>
         </div>
       </div>
@@ -66,7 +87,7 @@
     <!-- 主容器 -->
     <div class="main-container">
       <!-- 知识库抽屉（包含上传与构建） -->
-      <el-drawer v-model="kbVisible" title="知识库管理" size="35%">
+      <el-drawer v-model="kbVisible" title="📚 知识库管理" size="35%">
         <div class="sidebar-content">
           <div class="sidebar-section">
             <h3 class="section-title">📤 上传文档</h3>
@@ -79,7 +100,7 @@
                 @change="handleFileSelect"
                 accept=".md,.pdf,.docx,.txt"
               />
-              <div class="upload-box" ref="uploadBox" @click="triggerFileInput">
+              <div class="upload-box hover-lift" ref="uploadBox" @click="triggerFileInput">
                 <div class="upload-icon">📎</div>
                 <p>点击选择或拖拽文件</p>
                 <span class="upload-hint">支持 MD、PDF、DOCX、TXT</span>
@@ -122,7 +143,9 @@
             </div>
 
             <!-- 构建结果 -->
-            <div v-if="buildResult" :class="['build-result', buildResult.type]">
+            <div v-if="buildResult" :class="['build-result', buildResult.type, 'appear']">
+              <span v-if="buildResult.type === 'success'">✅</span>
+              <span v-else>❌</span>
               {{ buildResult.message }}
             </div>
           </div>
@@ -133,9 +156,23 @@
       <main class="chat-area">
         <div class="messages-container">
           <div v-if="messages.length === 0" class="empty-state">
-            <!-- <div class="empty-icon">🤖</div> -->
-            <h2>开始提问吧</h2>
+            <div class="empty-icon floating">🚀</div>
+            <h2>开始探索知识</h2>
             <p>{{ currentModeDesc }}</p>
+            <div class="empty-hints">
+              <div class="hint-card glass-card hover-lift">
+                <span class="hint-icon">💡</span>
+                <span class="hint-text">上传文档构建知识库</span>
+              </div>
+              <div class="hint-card glass-card hover-lift">
+                <span class="hint-icon">🔍</span>
+                <span class="hint-text">智能检索精准答案</span>
+              </div>
+              <div class="hint-card glass-card hover-lift">
+                <span class="hint-icon">🤖</span>
+                <span class="hint-text">AI 助手随时待命</span>
+              </div>
+            </div>
           </div>
 
           <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role, { 'error-message': msg.isError }]">
@@ -150,8 +187,26 @@
                 <p v-else>{{ formatContent(msg.content) }}</p>
 
                 <!-- 图片显示 -->
-                <div v-if="msg.image" class="message-image">
+                <div v-if="msg.images && msg.images.length > 0" class="message-images">
+                  <img 
+                    v-for="(image, imgIdx) in msg.images" 
+                    :key="imgIdx"
+                    :src="image" 
+                    :alt="`图片 ${imgIdx + 1}`" 
+                  />
+                </div>
+                <!-- 单图片兼容 -->
+                <div v-else-if="msg.image" class="message-images">
                   <img :src="msg.image" :alt="'图片'" />
+                </div>
+                
+                <!-- 文件显示 -->
+                <div v-if="msg.files && msg.files.length > 0" class="message-files">
+                  <div v-for="(file, fIdx) in msg.files" :key="fIdx" class="message-file-item">
+                    <span class="file-icon-small">{{ getFileIcon(file.type) }}</span>
+                    <span class="file-name-small">{{ file.name }}</span>
+                    <span class="file-size-small">{{ formatFileSize(file.size) }}</span>
+                  </div>
                 </div>
               </div>
 
@@ -221,29 +276,76 @@
             <div class="input-actions">
               <el-button
                 type="text"
-                :icon="PictureFilled"
                 @click="triggerImageInput"
-                title="粘贴或上传图片"
-              />
+                title="上传图片"
+                class="upload-image-btn"
+              >
+                <span class="upload-icon">+</span>
+              </el-button>
+              <el-button
+                type="text"
+                @click="triggerChatFileInput"
+                title="上传文件"
+                class="upload-file-btn"
+              >
+                <span class="upload-icon">📎</span>
+              </el-button>
               <input
                 ref="imageInput"
                 type="file"
                 accept="image/*"
+                multiple
                 style="display: none"
                 @change="handleImageSelect"
+              />
+              <input
+                ref="fileInput2"
+                type="file"
+                accept=".pdf,.doc,.docx,.txt,.md,.json,.csv,.xls,.xlsx"
+                multiple
+                style="display: none"
+                @change="handleFileAttach"
               />
             </div>
             <div class="input-box">
               <!-- 图片预览 -->
-              <div v-if="currentImageBase64" class="image-preview">
-                <img :src="currentImageBase64" :alt="'预览图片'" />
-                <el-button
-                  type="text"
-                  @click="currentImageBase64 = null"
-                  class="remove-image"
+              <div v-if="uploadedImages.length > 0" class="images-preview-container">
+                <div 
+                  v-for="(img, idx) in uploadedImages" 
+                  :key="idx" 
+                  class="image-preview-item"
                 >
-                  ✕
-                </el-button>
+                  <img :src="img" :alt="`预览图片 ${idx + 1}`" />
+                  <el-button
+                    type="text"
+                    @click="removeImage(idx)"
+                    class="remove-image"
+                  >
+                    ✕
+                  </el-button>
+                </div>
+              </div>
+              
+              <!-- 文件预览 -->
+              <div v-if="attachedFiles && attachedFiles.length > 0" class="files-preview-container">
+                <div 
+                  v-for="(file, idx) in attachedFiles" 
+                  :key="`file-${idx}-${file.name}`" 
+                  class="file-preview-item"
+                >
+                  <span class="file-icon">{{ getFileIcon(file && file.type) }}</span>
+                  <div class="file-info">
+                    <span class="file-name">{{ file && file.name || '未知文件' }}</span>
+                    <span class="file-size">{{ file && file.size ? formatFileSize(file.size) : '' }}</span>
+                  </div>
+                  <el-button
+                    type="text"
+                    @click="removeFile(idx)"
+                    class="remove-file"
+                  >
+                    ✕
+                  </el-button>
+                </div>
               </div>
               <el-input
                 v-model="question"
@@ -268,18 +370,69 @@
       </main>
     </div>
 
+    <!-- 对话历史抽屉 -->
+    <el-drawer v-model="historyVisible" title="对话历史" size="35%" @open="loadConversationList">
+      <div class="history-content">
+        <div v-if="historyLoading" class="history-loading">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>加载中...</span>
+        </div>
+        
+        <div v-else-if="conversationList.length === 0" class="history-empty">
+          <div class="empty-icon">💬</div>
+          <p>暂无对话历史</p>
+        </div>
+        
+        <div v-else class="conversation-list">
+          <div 
+            v-for="conv in conversationList" 
+            :key="conv.id"
+            :class="['conversation-item', { active: conv.id === conversationId }]"
+            @click="loadConversation(conv.id)"
+          >
+            <div class="conv-header">
+              <span class="conv-title">{{ conv.title }}</span>
+              <el-button
+                type="text"
+                size="small"
+                @click.stop="deleteConversation(conv.id)"
+                class="delete-btn"
+                title="删除对话"
+              >
+                🗑️
+              </el-button>
+            </div>
+            <div class="conv-meta">
+              <span class="conv-count">{{ conv.message_count }} 条消息</span>
+              <span class="conv-time">{{ formatTime(conv.last_time) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
     <!-- 设置抽屉 -->
     <el-drawer v-model="settingsVisible" title="模型配置" size="35%">
       <div class="settings-content">
         <div class="settings-group">
           <label class="settings-label">模型提供者</label>
-          <el-select v-model="provider" placeholder="选择模型提供者" class="full-width">
-            <el-option label="后端默认" value=""></el-option>
-            <el-option label="OpenAI" value="openai"></el-option>
-            <el-option label="Gemini" value="gemini"></el-option>
-            <el-option label="Ollama (本地)" value="ollama"></el-option>
-            <el-option label="DeepSeek (远程)" value="deepseek"></el-option>
-          </el-select>
+          <div class="custom-select full-width" :class="{ 'is-open': providerDropdownOpen }" v-click-outside="() => providerDropdownOpen = false">
+            <div class="custom-select__trigger" @click="providerDropdownOpen = !providerDropdownOpen">
+              <span class="custom-select__value">{{ currentProviderLabel }}</span>
+              <span class="custom-select__arrow">▾</span>
+            </div>
+            <div class="custom-select__dropdown"  v-show="providerDropdownOpen">
+              <div
+                v-for="opt in providerOptions"
+                :key="opt.value"
+                class="custom-select__option"
+                :class="{ 'is-selected': provider === opt.value }"
+                @click="selectProvider(opt.value)"
+              >
+                {{ opt.label }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Ollama 配置 -->
@@ -331,14 +484,30 @@
 
 <script>
 import axios from 'axios'
-import { Setting, PictureFilled } from '@element-plus/icons-vue'
+import { Setting, PictureFilled, Loading } from '@element-plus/icons-vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
 
 export default {
   components: {
     Setting,
-    PictureFilled
+    PictureFilled,
+    Loading
+  },
+  directives: {
+    'click-outside': {
+      mounted(el, binding) {
+        el._clickOutside = (event) => {
+          if (!(el === event.target || el.contains(event.target))) {
+            binding.value(event)
+          }
+        }
+        document.addEventListener('click', el._clickOutside)
+      },
+      unmounted(el) {
+        document.removeEventListener('click', el._clickOutside)
+      }
+    }
   },
   data() {
     return {
@@ -346,19 +515,33 @@ export default {
       isDark: false,
       question: '',
       messages: [],
+      conversationId: null,  // 当前会话ID
       status: { vector_store_loaded: false },
       settingsVisible: false,
       kbVisible: false,
+      historyVisible: false,  // 对话历史抽屉
       messageLoading: false,
       
+      // 对话历史
+      conversationList: [],
+      historyLoading: false,
+      
       // 查询模式
-      queryMode: 'rag',
+      queryMode: 'smart',
+      modeDropdownOpen: false,
       modeOptions: [
-        { value: 'rag', label: '纯 RAG', icon: '', desc: '仅知识库检索，速度快' },
-        { value: 'smart', label: '智能处理', icon: '', desc: '自动判断用 RAG 还是 Agent' },
-        { value: 'full', label: '完整 Agent', icon: '', desc: '全功能推理+工具' },
-        { value: 'research', label: '网络模式', icon: '', desc: '强化网络搜索能力' },
-        { value: 'manager', label: '文件模式', icon: '', desc: '强化文件操作能力' }
+        { value: 'rag', label: '纯 RAG', icon: '📚', desc: '仅知识库检索，速度快' },
+        { value: 'smart', label: '智能模式', icon: '🧠', desc: '大模型分析问题，自动选择最佳工具' }
+      ],
+      
+      // 模型提供者选项
+      providerDropdownOpen: false,
+      providerOptions: [
+        { value: '', label: '后端默认' },
+        { value: 'openai', label: 'OpenAI' },
+        { value: 'gemini', label: 'Gemini' },
+        { value: 'ollama', label: 'Ollama (本地)' },
+        { value: 'deepseek', label: 'DeepSeek (远程)' }
       ],
       
       // 模型配置
@@ -386,7 +569,10 @@ export default {
       progressInterval: null,
       
       // 图片数据
-      currentImageBase64: null
+      uploadedImages: [],
+      
+      // 附件数据
+      attachedFiles: []
     }
   },
   computed: {
@@ -403,6 +589,14 @@ export default {
     currentModeDesc() {
       const mode = this.modeOptions.find(m => m.value === this.queryMode)
       return mode?.desc || '上传文档并构建知识库后，您可以提出相关问题'
+    },
+    currentModeLabel() {
+      const mode = this.modeOptions.find(m => m.value === this.queryMode)
+      return mode?.label || '纯 RAG'
+    },
+    currentProviderLabel() {
+      const opt = this.providerOptions.find(o => o.value === this.provider)
+      return opt?.label || '后端默认'
     }
   },
   mounted() {
@@ -460,13 +654,12 @@ export default {
         this.deepseekModel = settings.deepseekModel || ''
         this.deepseekApiUrl = settings.deepseekApiUrl || ''
         this.deepseekApiKey = settings.deepseekApiKey || ''
-        // 兼容旧配置
-        if (settings.queryMode) {
+        // 加载查询模式（只支持 rag 和 smart）
+        if (settings.queryMode === 'rag' || settings.queryMode === 'smart') {
           this.queryMode = settings.queryMode
-        } else if (settings.agentMode) {
-          this.queryMode = 'full'
         } else {
-          this.queryMode = 'rag'
+          // 其他旧模式统一转为智能模式
+          this.queryMode = 'smart'
         }
       }
     },
@@ -514,6 +707,16 @@ export default {
       const mode = this.modeOptions.find(m => m.value === val)
       this.$message.success(`已切换到${mode?.label || val}模式`)
     },
+    selectMode(value) {
+      this.queryMode = value
+      this.modeDropdownOpen = false
+      this.onModeChange(value)
+    },
+    selectProvider(value) {
+      this.provider = value
+      this.providerDropdownOpen = false
+      this.saveSettings()
+    },
     async fetchStatus() {
       try {
         const res = await axios.get(`${API_BASE}/status`)
@@ -555,6 +758,111 @@ export default {
     triggerImageInput() {
       this.$refs.imageInput.click()
     },
+    triggerChatFileInput() {
+      this.$refs.fileInput2.click()
+    },
+    async handleFileAttach(e) {
+      const files = e.target.files
+      if (files && files.length > 0) {
+        let addedCount = 0
+        for (let file of files) {
+          // 限制文件大小（10MB）
+          if (file.size > 10 * 1024 * 1024) {
+            this.$message.warning(`文件 ${file.name} 超过10MB，已跳过`)
+            continue
+          }
+          
+          try {
+            // 读取文件内容
+            const content = await this.readFileContent(file)
+            this.attachedFiles.push({
+              name: file.name,
+              type: file.type || this.getFileTypeFromName(file.name),
+              size: file.size,
+              content: content
+            })
+            addedCount++
+          } catch (err) {
+            console.error('文件读取失败:', file.name, err)
+            this.$message.error(`文件 ${file.name} 读取失败`)
+          }
+        }
+        if (addedCount > 0) {
+          this.$message.success(`已添加 ${addedCount} 个文件`)
+        }
+      }
+      // 清空input，允许重复上传同一个文件
+      if (this.$refs.fileInput2) {
+        this.$refs.fileInput2.value = ''
+      }
+    },
+    async readFileContent(file) {
+      return new Promise((resolve, reject) => {
+        // 根据文件类型选择读取方式
+        const isTextFile = file.type.startsWith('text/') || 
+            file.name.endsWith('.txt') || 
+            file.name.endsWith('.md') || 
+            file.name.endsWith('.json') ||
+            file.name.endsWith('.csv')
+        
+        if (!isTextFile) {
+          // 对于二进制文件（PDF, DOCX等），只保存文件信息，不读取内容
+          resolve('[二进制文件: ' + file.name + ']')
+          return
+        }
+        
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const content = e.target.result
+          // 对于文本文件，截取前8000字符以节省token
+          if (typeof content === 'string') {
+            const truncated = content.substring(0, 8000)
+            if (content.length > 8000) {
+              resolve(truncated + '\n\n[文件内容已截断，仅保留前8000字符]')
+            } else {
+              resolve(truncated)
+            }
+          } else {
+            resolve(String(content))
+          }
+        }
+        reader.onerror = () => {
+          resolve('[无法读取文件: ' + file.name + ']')
+        }
+        
+        reader.readAsText(file)
+      })
+    },
+    getFileTypeFromName(filename) {
+      const ext = filename.split('.').pop().toLowerCase()
+      const types = {
+        'txt': 'text/plain',
+        'md': 'text/markdown',
+        'json': 'application/json',
+        'csv': 'text/csv',
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }
+      return types[ext] || 'application/octet-stream'
+    },
+    getFileIcon(type) {
+      if (!type) return '📎'
+      const t = String(type).toLowerCase()
+      if (t.includes('pdf')) return '📄'
+      if (t.includes('word') || t.includes('doc')) return '📝'
+      if (t.includes('excel') || t.includes('sheet')) return '📊'
+      if (t.includes('text') || t.includes('markdown')) return '📃'
+      if (t.includes('json')) return '📋'
+      if (t.includes('csv')) return '📈'
+      return '📎'
+    },
+    removeFile(index) {
+      this.attachedFiles.splice(index, 1)
+      this.$message.success('文件已移除')
+    },
     async handleFileSelect(e) {
       const files = e.target.files
       for (let file of files) {
@@ -583,10 +891,11 @@ export default {
       }
     },
     formatFileSize(bytes) {
-      if (bytes === 0) return '0 B'
+      if (!bytes || bytes === 0) return '0 B'
+      if (typeof bytes !== 'number' || isNaN(bytes)) return '-'
       const k = 1024
       const sizes = ['B', 'KB', 'MB', 'GB']
-      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1)
       return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
     },
     async startBuild() {
@@ -633,31 +942,41 @@ export default {
       }, 500)
     },
     async handleImageSelect(e) {
-      const file = e.target.files[0]
-      if (file) {
-        const reader = new FileReader()
-        reader.onload = (event) => {
-          this.currentImageBase64 = event.target.result
-          this.$message.success('图片已加载，您可以在提问时发送')
+      const files = e.target.files
+      if (files && files.length > 0) {
+        for (let file of files) {
+          const reader = new FileReader()
+          reader.onload = (event) => {
+            this.uploadedImages.push(event.target.result)
+          }
+          reader.readAsDataURL(file)
         }
-        reader.readAsDataURL(file)
+        this.$message.success(`已加载 ${files.length} 张图片`)
       }
       this.$refs.imageInput.value = ''
+    },
+    removeImage(index) {
+      this.uploadedImages.splice(index, 1)
+      this.$message.success('图片已移除')
     },
     handlePaste(e) {
       const items = e.clipboardData?.items
       if (items) {
+        let imageCount = 0
         for (let item of items) {
           if (item.type.indexOf('image') !== -1) {
             e.preventDefault()
             const file = item.getAsFile()
             const reader = new FileReader()
             reader.onload = (event) => {
-              this.currentImageBase64 = event.target.result
-              this.$message.success('图片已从剪贴板加载')
+              this.uploadedImages.push(event.target.result)
             }
             reader.readAsDataURL(file)
+            imageCount++
           }
+        }
+        if (imageCount > 0) {
+          this.$message.success(`已从剪贴板加载 ${imageCount} 张图片`)
         }
       }
     },
@@ -667,31 +986,177 @@ export default {
         this.sendQuestion()
       }
     },
+    
+    // 开始新对话
+    startNewConversation() {
+      this.conversationId = null
+      this.messages = []
+      this.$message.success('已开始新对话')
+    },
+    
+    // 加载对话列表
+    async loadConversationList() {
+      this.historyLoading = true
+      try {
+        const res = await axios.get(`${API_BASE}/conversations`)
+        if (res.data.success) {
+          this.conversationList = res.data.conversations
+        }
+      } catch (e) {
+        console.error('加载对话列表失败:', e)
+        this.$message.error('加载对话列表失败')
+      } finally {
+        this.historyLoading = false
+      }
+    },
+    
+    // 加载指定对话
+    async loadConversation(conversationId) {
+      try {
+        const res = await axios.get(`${API_BASE}/conversations/${conversationId}`)
+        if (res.data.success) {
+          // 设置当前会话ID
+          this.conversationId = conversationId
+          
+          // 将历史消息转换为前端格式
+          this.messages = res.data.messages.map(msg => ({
+            role: msg.role,
+            content: msg.content,
+            finished: true,
+            sources: []
+          }))
+          
+          // 关闭抽屉
+          this.historyVisible = false
+          
+          this.$message.success('已加载历史对话，您可以继续对话')
+        }
+      } catch (e) {
+        console.error('加载对话失败:', e)
+        this.$message.error('加载对话失败')
+      }
+    },
+    
+    // 删除对话
+    async deleteConversation(conversationId) {
+      try {
+        await this.$confirm('确定要删除这个对话吗？', '提示', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+        
+        const res = await axios.delete(`${API_BASE}/conversations/${conversationId}`)
+        if (res.data.success) {
+          // 从列表中移除
+          this.conversationList = this.conversationList.filter(c => c.id !== conversationId)
+          
+          // 如果删除的是当前对话，清空当前状态
+          if (this.conversationId === conversationId) {
+            this.conversationId = null
+            this.messages = []
+          }
+          
+          this.$message.success('对话已删除')
+        }
+      } catch (e) {
+        if (e !== 'cancel') {
+          console.error('删除对话失败:', e)
+          this.$message.error('删除对话失败')
+        }
+      }
+    },
+    
+    // 格式化时间
+    formatTime(timestamp) {
+      if (!timestamp) return ''
+      const date = new Date(timestamp)
+      const now = new Date()
+      const diff = now - date
+      
+      // 今天内
+      if (diff < 24 * 60 * 60 * 1000 && date.getDate() === now.getDate()) {
+        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      }
+      
+      // 一周内
+      if (diff < 7 * 24 * 60 * 60 * 1000) {
+        const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+        return days[date.getDay()]
+      }
+      
+      // 其他
+      return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+    },
+    
+    // 创建新会话（调用 API）
+    async createNewConversation() {
+      try {
+        const response = await fetch(`${API_BASE}/agent/conversation/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          this.conversationId = data.conversation_id
+          console.log('[对话] 创建新会话:', this.conversationId)
+        } else {
+          console.error('[对话] 创建会话失败:', response.status)
+        }
+      } catch (e) {
+        console.error('[对话] 创建会话异常:', e)
+      }
+    },
+    
     async sendQuestion() {
-      if (!this.question.trim() && !this.currentImageBase64) return
+      if (!this.question.trim() && this.uploadedImages.length === 0 && this.attachedFiles.length === 0) return
       
       const q = this.question.trim()
-      this.messages.push({
+      
+      // 如果有附件，将文件内容附加到问题中
+      let fullQuestion = q
+      if (this.attachedFiles.length > 0) {
+        fullQuestion += '\n\n--- 附件内容 ---\n'
+        for (const file of this.attachedFiles) {
+          fullQuestion += `\n[${file.name}]:\n${file.content}\n`
+        }
+      }
+      
+      // 添加用户消息，包含所有图片和文件
+      const userMessage = {
         role: 'user',
         content: q,
-        image: this.currentImageBase64,
         finished: true
-      })
+      }
+      
+      // 如果有图片，添加到消息中
+      if (this.uploadedImages.length > 0) {
+        userMessage.images = [...this.uploadedImages]
+      }
+      
+      // 如果有文件，添加到消息中
+      if (this.attachedFiles.length > 0) {
+        userMessage.files = this.attachedFiles.map(f => ({ name: f.name, size: f.size, type: f.type }))
+      }
+      
+      this.messages.push(userMessage)
       
       // 保存配置
       this.saveSettings()
       this.question = ''
-      const imageToSend = this.currentImageBase64
-      this.currentImageBase64 = null
+      const imagesToSend = [...this.uploadedImages]
+      const filesToSend = [...this.attachedFiles]
+      this.uploadedImages = []  // 清空已上传图片
+      this.attachedFiles = []  // 清空已附加文件
       this.messageLoading = true
       
       // 根据模式选择不同的处理方式
       if (this.queryMode === 'rag') {
-        await this.sendRagQuery(q)
-      } else if (this.queryMode === 'smart') {
-        await this.sendSmartQuery(q)
+        await this.sendRagQuery(fullQuestion, imagesToSend)
       } else {
-        await this.sendAgentQuery(q, this.queryMode)
+        // 智能模式 - 使用智能意图路由
+        await this.sendSmartQuery(fullQuestion, imagesToSend)
       }
     },
     
@@ -706,16 +1171,26 @@ export default {
       })
       
       try {
+        const payload = {
+          question: q,
+          conversation_id: this.conversationId || null
+        }
+        
         const response = await fetch(`${API_BASE}/agent/smart-query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: q })
+          body: JSON.stringify(payload)
         })
         
         const data = await response.json()
         if (data.success) {
           this.messages[msgIdx].content = data.answer
           this.messages[msgIdx].sources = data.sources || []
+          
+          // 如果还没有会话 ID，创建一个
+          if (!this.conversationId) {
+            await this.createNewConversation()
+          }
         } else {
           this.messages[msgIdx].content = data.error || '查询失败'
           this.messages[msgIdx].isError = true
@@ -739,7 +1214,8 @@ export default {
         sources: [],
         thoughtProcess: [],
         toolsUsed: [],
-        finished: false
+        finished: false,
+        streamingTokens: ''  // 用于累积流式 token
       })
       
       try {
@@ -750,8 +1226,17 @@ export default {
           provider: this.provider || undefined,  // 添加 provider
           max_iterations: 10,// 最多迭代 10 次
           enable_reflection: true,// 启用反思
-          enable_planning: true// 启用规划
+          enable_planning: true,// 启用规划
+          conversation_id: this.conversationId || null  // 添加会话 ID
         }
+        
+        // 如果还没有会话 ID，先创建一个
+        if (!this.conversationId) {
+          await this.createNewConversation()
+          payload.conversation_id = this.conversationId
+        }
+        
+        console.log('[Agent] 发送请求，会话ID:', this.conversationId)
         
         // 使用 Agent 流式响应
         const response = await fetch(`${API_BASE}/agent/query-stream`, {
@@ -763,6 +1248,9 @@ export default {
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+        let currentThinkingContent = ''  // 当前思考内容
+        let answerContent = ''  // 累积的最终答案
+        let isStreamingAnswer = false  // 是否正在流式输出答案
         
         while (true) {
           const { done, value } = await reader.read()
@@ -778,9 +1266,30 @@ export default {
                 const data = JSON.parse(line.slice(6))
                 
                 if (data.type === 'start') {
-                  this.messages[msgIdx].content = '正在思考...\n'
+                  this.messages[msgIdx].content = '🤔 正在思考...\n'
+                } else if (data.type === 'iteration') {
+                  // 新的迭代开始 - 不显示迭代信息
+                  // if (!isStreamingAnswer) {
+                  //   this.messages[msgIdx].content = `🔄 迭代 ${data.data.iteration}/${data.data.max}\n`
+                  // }
+                } else if (data.type === 'thinking_start') {
+                  // 开始思考，重置当前思考内容
+                  currentThinkingContent = ''
+                  if (!isStreamingAnswer) {
+                    this.messages[msgIdx].content = '💭 正在分析...'
+                  }
+                } else if (data.type === 'thinking_end') {
+                  // 思考完成，从 data.data 获取完整的思考内容
+                  currentThinkingContent = data.data || ''
+                  const thoughtMatch = currentThinkingContent.match(/Thought:\s*(.+?)(?=Action:|Final Answer:|$)/s)
+                  if (thoughtMatch) {
+                    this.messages[msgIdx].thoughtProcess.push({
+                      step: data.step,
+                      thought: thoughtMatch[1].trim()
+                    })
+                  }
                 } else if (data.type === 'thought') {
-                  // 添加思考步骤
+                  // 兼容旧格式：添加思考步骤
                   this.messages[msgIdx].thoughtProcess.push({
                     step: data.data.step,
                     thought: data.data.thought
@@ -795,6 +1304,10 @@ export default {
                   if (!this.messages[msgIdx].toolsUsed.includes(data.data.tool)) {
                     this.messages[msgIdx].toolsUsed.push(data.data.tool)
                   }
+                  // 不再显示"使用工具"的中间状态
+                  // if (!isStreamingAnswer) {
+                  //   this.messages[msgIdx].content = `🔧 使用工具: ${data.data.tool}\n`
+                  // }
                 } else if (data.type === 'observation') {
                   // 更新观察结果
                   const currentStep = this.messages[msgIdx].thoughtProcess.length - 1
@@ -809,6 +1322,26 @@ export default {
                       this.messages[msgIdx].thoughtProcess[currentStep].observation = data.data
                     }
                   }
+                  // 不再显示"获取到工具结果"的中间状态
+                  // if (!isStreamingAnswer) {
+                  //   this.messages[msgIdx].content = `📋 获取到工具结果...\n`
+                  // }
+                } else if (data.type === 'answer_start') {
+                  // 开始流式输出答案
+                  isStreamingAnswer = true
+                  answerContent = ''
+                  this.messages[msgIdx].content = ''
+                } else if (data.type === 'answer_token') {
+                  // 流式答案 token
+                  answerContent += data.data
+                  this.messages[msgIdx].content = answerContent
+                } else if (data.type === 'reflecting') {
+                  if (!isStreamingAnswer) {
+                    this.messages[msgIdx].content = `🔍 ${data.data}\n`
+                  }
+                } else if (data.type === 'reflection_result') {
+                  // 反思结果
+                  this.messages[msgIdx].reflection = data.data
                 } else if (data.type === 'answer') {
                   this.messages[msgIdx].content = data.data
                 } else if (data.type === 'meta') {
@@ -846,6 +1379,27 @@ export default {
         if (this.provider && this.provider.trim()) {
           payload.provider = this.provider.trim()
         }
+        
+        // 添加对话历史 - 即使是null也传递，让后端决定是否创建新会话
+        payload.conversation_id = this.conversationId || null
+        console.log('[对话] 发送请求，当前conversationId:', this.conversationId)
+        
+        // 添加历史消息（只发送最近的6条消息，3轮对话）
+        // 注意：排除刚刚添加的当前用户消息（最后一条）
+        if (this.messages.length > 1) {
+          const history = this.messages
+            .slice(0, -1)  // 排除最后一条（当前用户消息）
+            .filter(m => m.finished && !m.isError)
+            .slice(-6)
+            .map(m => ({
+              role: m.role,
+              content: m.content
+            }))
+          if (history.length > 0) {
+            payload.history = history
+          }
+        }
+        
         if (this.provider === 'ollama') {
           if (this.ollamaModel && this.ollamaModel.trim()) {
             payload.ollama_model = this.ollamaModel.trim()
@@ -938,6 +1492,12 @@ export default {
                       }
                     }
                     this.messages[msgIdx].sources = uniqueSources
+                  }
+                } else if (data.type === 'conversation_id') {
+                  // 保存会话ID
+                  if (!this.conversationId) {
+                    this.conversationId = data.data
+                    console.log('[对话] 创建新会话ID:', this.conversationId)
                   }
                 } else if (data.type === 'done') {
                   this.messages[msgIdx].finished = true
@@ -1063,7 +1623,7 @@ export default {
 }
 </script>
 
-<style scoped>
+<style scoped lang="scss">
 @import './styles.css';
 
 /* 简单的可访问加载转圈指示器 */
@@ -1145,26 +1705,45 @@ export default {
 .dark .message-avatar { opacity: 0.9 }
 
 .dark .input-container {
-  background: linear-gradient(180deg, rgba(3,6,9,0.7), rgba(4,8,12,0.85));
-  border-top: 1px solid rgba(255,255,255,0.02);
+  background: linear-gradient(180deg, rgba(15, 15, 30, 0.9), rgba(10, 10, 25, 0.95));
+  border-top: 1px solid rgba(129, 140, 248, 0.1);
+  backdrop-filter: blur(20px);
 }
 
-.dark .input-box .chat-input textarea {
-  background: rgba(255,255,255,0.02) !important;
+.dark .input-box .chat-input,
+.dark .input-box .el-textarea {
+  background: transparent !important;
+  border: none !important;
+}
+
+.dark .input-box .chat-input .el-textarea__inner {
+  background: rgba(26, 26, 50, 0.8) !important;
   color: #e8f3ff !important;
-  border: 1px solid rgba(255,255,255,0.04) !important;
+  border: 2px solid rgba(129, 140, 248, 0.2) !important;
+  border-radius: 12px !important;
+}
+
+.dark .input-box .chat-input .el-textarea__inner:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.25) !important;
 }
 
 .dark .send-btn {
-  background: linear-gradient(180deg,#2f7ef8,#1f57d1);
-  color: #fff;
-  box-shadow: 0 8px 30px rgba(31,87,209,0.18);
-  border-radius: 8px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4) !important;
+  border-radius: 12px !important;
+  border: none !important;
+}
+
+.dark .send-btn:hover {
+  box-shadow: 0 6px 30px rgba(99, 102, 241, 0.5) !important;
+  transform: translateY(-2px);
 }
 
 .dark .el-drawer__body {
-  background: #071018;
-  color: #dfe9f8;
+  background: transparent;
+  color: #e2e8f0;
 }
 
 .dark .upload-box {
@@ -1190,5 +1769,138 @@ export default {
 .dark .observation-url { color: #9fd1ff }
 .dark .observation-file { color: #b8d8ff }
 
+/* 对话历史样式 */
+.history-content {
+  padding: 16px;
+}
 
+.history-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  color: #909399;
+}
+
+.history-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #909399;
+}
+
+.history-empty .empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.conversation-item {
+  padding: 16px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(245,247,250,0.8));
+  border: 1px solid rgba(0,0,0,0.06);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.conversation-item:hover {
+  background: linear-gradient(180deg, rgba(64,158,255,0.08), rgba(64,158,255,0.04));
+  border-color: rgba(64,158,255,0.2);
+  transform: translateY(-1px);
+}
+
+.conversation-item.active {
+  background: linear-gradient(180deg, rgba(64,158,255,0.12), rgba(64,158,255,0.06));
+  border-color: rgba(64,158,255,0.3);
+}
+
+.conv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.conv-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #303133;
+  line-height: 1.4;
+  flex: 1;
+  word-break: break-word;
+}
+
+.delete-btn {
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 4px 8px !important;
+  min-height: auto !important;
+}
+
+.conversation-item:hover .delete-btn {
+  opacity: 1;
+}
+
+.conv-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #909399;
+}
+
+.conv-count {
+  background: rgba(64,158,255,0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: #409eff;
+}
+
+/* 深色模式对话历史 */
+.dark .conversation-item {
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+.dark .conversation-item:hover {
+  background: linear-gradient(180deg, rgba(64,158,255,0.12), rgba(64,158,255,0.06));
+  border-color: rgba(64,158,255,0.25);
+}
+
+.dark .conversation-item.active {
+  background: linear-gradient(180deg, rgba(64,158,255,0.18), rgba(64,158,255,0.10));
+  border-color: rgba(64,158,255,0.35);
+}
+
+.dark .conv-title {
+  color: #e8f3ff;
+}
+
+.dark .conv-meta {
+  color: #8a9bb0;
+}
+
+.dark .conv-count {
+  background: rgba(64,158,255,0.15);
+  color: #7db8ff;
+}
+
+.dark .history-loading,
+.dark .history-empty {
+  color: #8a9bb0;
+}
+
+::v-deep .el-input__inner {
+  border-radius: 0px !important;
+}
+
+::v-deep .el-input__wrapper {
+  padding: 0px !important;
+}
 </style>

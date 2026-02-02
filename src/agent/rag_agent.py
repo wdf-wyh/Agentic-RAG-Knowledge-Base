@@ -1,5 +1,6 @@
 """RAG Agent - 具备自主决策能力的 RAG 智能体"""
 
+import logging
 from typing import List, Dict, Any, Optional
 
 from src.agent.base import BaseAgent, AgentConfig, AgentResponse
@@ -24,9 +25,14 @@ from src.agent.tools.analysis_tools import (
     SummarizeTool,
     GenerateReportTool,
 )
+from src.agent.intent_router import IntentRouter, IntentType, IntentAnalysis
+
+logger = logging.getLogger(__name__)
 
 from src.core.vector_store import VectorStore
 from src.services.rag_assistant import RAGAssistant
+from src.services.conversation_manager import ConversationManager
+from src.models.schemas import ConversationMessage
 
 
 class RAGAgent(BaseAgent):
@@ -51,6 +57,7 @@ class RAGAgent(BaseAgent):
         enable_web_search: bool = True,
         enable_file_ops: bool = True,
         web_search_provider: str = "duckduckgo",
+        conversation_manager: ConversationManager = None,
     ):
         """初始化 RAG Agent
 
@@ -61,15 +68,28 @@ class RAGAgent(BaseAgent):
             enable_web_search: 是否启用网页搜索
             enable_file_ops: 是否启用文件操作
             web_search_provider: 搜索提供者 ('duckduckgo', 'tavily', 'serpapi')
+            conversation_manager: 对话管理器实例（可选）
         """
         self._vector_store = vector_store
         self._assistant = assistant
         self._enable_web_search = enable_web_search
         self._enable_file_ops = enable_file_ops
         self._web_search_provider = web_search_provider
+        
+        # 对话管理
+        self._conversation_manager = conversation_manager or ConversationManager()
+        self._current_conversation_id: Optional[str] = None
+        
+        # 智能意图路由器（在 setup_tools 后初始化）
+        self._intent_router: Optional[IntentRouter] = None
 
         super().__init__(config)
         self.setup_tools()
+        
+        # 初始化意图路由器（在工具注册后）
+        self._intent_router = IntentRouter(
+            available_tools=list(self.tools.keys())
+        )
 
     def setup_tools(self):
         """设置 Agent 可用的工具"""
@@ -127,55 +147,271 @@ class RAGAgent(BaseAgent):
         self.register_tool(DocumentAnalysisTool())
         self.register_tool(SummarizeTool())
         self.register_tool(GenerateReportTool())
+        
+        # 7. 新增企业级工具
+        try:
+            from src.agent.tools.memory_tools import MemoryTool
+            self.register_tool(MemoryTool())
+        except ImportError:
+            pass
+        
+        try:
+            from src.agent.tools.task_tools import TaskTool
+            self.register_tool(TaskTool())
+        except ImportError:
+            pass
+        
+        try:
+            from src.agent.tools.code_tools import CodeExecutorTool, DataAnalysisTool
+            self.register_tool(CodeExecutorTool(sandbox_mode=True))
+            self.register_tool(DataAnalysisTool())
+        except ImportError:
+            pass
 
         if self.config.verbose:
             print(f"\n✓ RAG Agent 初始化完成，共注册 {len(self.tools)} 个工具")
 
-    def smart_query(self, question: str) -> AgentResponse:
-        """智能查询 - 自动判断最佳处理方式
+    def start_conversation(self) -> str:
+        """开始新的对话会话
+        
+        Returns:
+            会话ID
+        """
+        self._current_conversation_id = self._conversation_manager.create_conversation()
+        return self._current_conversation_id
+    
+    def set_conversation(self, conversation_id: str):
+        """设置当前会话ID
+        
+        Args:
+            conversation_id: 会话ID
+        """
+        self._current_conversation_id = conversation_id
+    
+    def get_conversation_history(self, max_messages: Optional[int] = None) -> List[ConversationMessage]:
+        """获取当前会话的历史消息
+        
+        Args:
+            max_messages: 最多返回的消息数量
+            
+        Returns:
+            消息列表
+        """
+        if not self._current_conversation_id:
+            return []
+        return self._conversation_manager.get_history(
+            self._current_conversation_id, 
+            max_messages=max_messages
+        )
+    
+    def clear_conversation(self):
+        """清空当前会话的历史"""
+        if self._current_conversation_id:
+            self._conversation_manager.clear_conversation(self._current_conversation_id)
 
-        根据问题类型自动选择：
-        1. 简单问题：直接 RAG 检索
-        2. 复杂问题：使用 Agent 推理
-        3. 需要最新信息：结合网页搜索
+    def smart_query(self, question: str, save_to_history: bool = True) -> AgentResponse:
+        """智能查询 - 使用大模型分析问题并决定最佳处理方式
+
+        核心流程：
+        1. 调用大模型分析用户问题的意图
+        2. 根据意图决定使用什么工具（知识库/联网搜索/直接回答等）
+        3. 执行相应的处理流程
 
         Args:
             question: 用户问题
+            save_to_history: 是否保存到对话历史
 
         Returns:
             AgentResponse
         """
-        # 简单问题检测（可以直接 RAG 回答）
-        simple_indicators = ["是什么", "什么是", "怎么用", "如何", "为什么"]
-        complex_indicators = [
-            "分析",
-            "对比",
-            "总结",
-            "生成",
-            "创建",
-            "修改",
-            "帮我",
-            "整理",
-        ]
-
-        is_complex = any(ind in question for ind in complex_indicators)
-
-        if not is_complex:
-            # 尝试直接 RAG 检索
-            rag_tool = self.tools.get("rag_search")
-            if rag_tool:
-                result = rag_tool.execute(query=question, generate_answer=True, top_k=5)
-                if result.success and result.output:
-                    return AgentResponse(
-                        success=True,
-                        answer=result.output,
-                        thought_process=[],
-                        tools_used=["rag_search"],
-                        iterations=1,
+        import pytz
+        from datetime import datetime
+        
+        # 保存用户消息到历史
+        if save_to_history and self._current_conversation_id:
+            self._conversation_manager.add_message(
+                self._current_conversation_id, "user", question
+            )
+        
+        # 获取对话历史
+        chat_history = ""
+        if self._current_conversation_id:
+            chat_history = self._conversation_manager.format_history_for_llm(
+                self._current_conversation_id,
+                max_turns=5
+            )
+        
+        # 获取当前时间
+        tz = pytz.timezone('Asia/Shanghai')
+        current_date = datetime.now(tz).strftime("%Y年%m月%d日 %H:%M:%S")
+        
+        # 第一步：使用大模型分析问题意图
+        logger.info(f"[SmartQuery] 开始分析问题意图: {question[:50]}...")
+        
+        if self._intent_router:
+            analysis = self._intent_router.analyze_intent(
+                question=question,
+                chat_history=chat_history,
+                current_date=current_date
+            )
+            
+            if self.config.verbose:
+                print(f"\n🧠 意图分析结果:")
+                print(f"   意图类型: {analysis.intent.value}")
+                print(f"   置信度: {analysis.confidence:.2f}")
+                print(f"   分析理由: {analysis.reasoning}")
+                print(f"   建议工具: {analysis.suggested_tools}")
+            
+            logger.info(f"[SmartQuery] 意图: {analysis.intent.value}, 置信度: {analysis.confidence}")
+            
+            # 第二步：根据意图决定处理方式
+            routing = self._intent_router.get_routing_decision(analysis)
+            
+            # 处理直接对话/历史问题
+            if analysis.intent == IntentType.CONVERSATION:
+                # 直接从历史对话中回答
+                response = self._handle_conversation_intent(question, chat_history, analysis)
+                if save_to_history and self._current_conversation_id and response.success:
+                    self._conversation_manager.add_message(
+                        self._current_conversation_id, "assistant", response.answer
                     )
+                return response
+            
+            # 处理直接回答（常识、简单计算等）
+            if analysis.intent == IntentType.DIRECT_ANSWER:
+                response = self._handle_direct_answer(question, analysis)
+                if save_to_history and self._current_conversation_id and response.success:
+                    self._conversation_manager.add_message(
+                        self._current_conversation_id, "assistant", response.answer
+                    )
+                return response
+            
+            # 处理知识库查询（简单RAG）
+            if analysis.intent == IntentType.KNOWLEDGE_BASE and analysis.confidence >= 0.8:
+                rag_tool = self.tools.get("rag_search")
+                if rag_tool:
+                    result = rag_tool.execute(query=question, generate_answer=True, top_k=3)
+                    if result.success and result.output:
+                        response = AgentResponse(
+                            success=True,
+                            answer=result.output,
+                            thought_process=[],
+                            tools_used=["rag_search"],
+                            iterations=1,
+                        )
+                        if save_to_history and self._current_conversation_id:
+                            self._conversation_manager.add_message(
+                                self._current_conversation_id, "assistant", result.output
+                            )
+                        return response
+        
+        # 第三步：复杂问题使用完整 Agent 推理
+        logger.info(f"[SmartQuery] 使用完整Agent推理流程")
+        response = self.run(question, chat_history)
+        
+        # 保存助手回复到历史
+        if save_to_history and self._current_conversation_id and response.success:
+            self._conversation_manager.add_message(
+                self._current_conversation_id, "assistant", response.answer
+            )
+        
+        return response
+    
+    def _handle_conversation_intent(
+        self, 
+        question: str, 
+        chat_history: str,
+        analysis: IntentAnalysis
+    ) -> AgentResponse:
+        """处理涉及历史对话的问题
+        
+        Args:
+            question: 用户问题
+            chat_history: 历史对话
+            analysis: 意图分析结果
+            
+        Returns:
+            AgentResponse
+        """
+        # 使用大模型从历史对话中生成回答
+        prompt = f"""请基于以下历史对话，回答用户的问题。
 
-        # 复杂问题使用完整 Agent 推理
-        return self.run(question)
+【历史对话】
+{chat_history}
+
+【用户问题】
+{question}
+
+请直接给出答案，如果历史对话中没有相关信息，请诚实说明。"""
+
+        try:
+            response = self.llm.invoke(prompt)
+            if isinstance(response, str):
+                answer = response
+            else:
+                answer = response.content if hasattr(response, 'content') else str(response)
+            
+            return AgentResponse(
+                success=True,
+                answer=answer + "\n\n来源: 对话历史",
+                thought_process=[],
+                tools_used=[],
+                iterations=1,
+            )
+        except Exception as e:
+            logger.error(f"处理对话意图失败: {e}")
+            return AgentResponse(
+                success=False,
+                answer=f"处理问题时出错: {str(e)}",
+                thought_process=[],
+                tools_used=[],
+                iterations=0,
+            )
+    
+    def _handle_direct_answer(
+        self, 
+        question: str,
+        analysis: IntentAnalysis
+    ) -> AgentResponse:
+        """处理可以直接回答的问题（常识、计算等）
+        
+        Args:
+            question: 用户问题
+            analysis: 意图分析结果
+            
+        Returns:
+            AgentResponse
+        """
+        prompt = f"""请回答以下问题。这是一个可以直接回答的问题（常识/计算/代码等）。
+
+【问题】
+{question}
+
+请给出准确、简洁的答案。"""
+
+        try:
+            response = self.llm.invoke(prompt)
+            if isinstance(response, str):
+                answer = response
+            else:
+                answer = response.content if hasattr(response, 'content') else str(response)
+            
+            return AgentResponse(
+                success=True,
+                answer=answer,
+                thought_process=[],
+                tools_used=[],
+                iterations=1,
+            )
+        except Exception as e:
+            logger.error(f"直接回答失败: {e}")
+            return AgentResponse(
+                success=False,
+                answer=f"处理问题时出错: {str(e)}",
+                thought_process=[],
+                tools_used=[],
+                iterations=0,
+            )
 
     def analyze_knowledge_base(self) -> AgentResponse:
         """分析知识库并提供优化建议

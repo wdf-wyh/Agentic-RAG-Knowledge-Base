@@ -9,7 +9,45 @@ from datetime import datetime
 from src.agent.tools.base import BaseTool, ToolResult, ToolCategory
 
 
-class ReadFileTool(BaseTool):
+class PathSecurityMixin:
+    """路径安全检查混入类 - 提供符号链接安全验证"""
+    
+    _allowed_paths: List[str] = []
+    
+    def _is_path_allowed(self, path: Path) -> bool:
+        """检查路径是否在允许范围内（包含符号链接安全检查）
+        
+        安全检查包括：
+        1. 路径必须在允许的目录内
+        2. 如果是符号链接，目标路径也必须在允许范围内
+        """
+        # 首先检查是否是符号链接，如果是，验证目标路径
+        if path.is_symlink():
+            try:
+                # 获取符号链接的真实目标路径
+                real_path = path.resolve()
+                # 如果目标路径不在允许范围内，拒绝访问
+                if not self._check_path_in_allowed(real_path):
+                    return False
+            except (OSError, ValueError):
+                # 符号链接解析失败，拒绝访问
+                return False
+        
+        return self._check_path_in_allowed(path.resolve())
+    
+    def _check_path_in_allowed(self, abs_path: Path) -> bool:
+        """检查绝对路径是否在允许的目录列表中"""
+        for allowed in self._allowed_paths:
+            allowed_abs = Path(allowed).resolve()
+            try:
+                abs_path.relative_to(allowed_abs)
+                return True
+            except ValueError:
+                continue
+        return False
+
+
+class ReadFileTool(PathSecurityMixin, BaseTool):
     """读取文件工具"""
     
     def __init__(self, allowed_paths: List[str] = None):
@@ -48,18 +86,6 @@ class ReadFileTool(BaseTool):
                 "required": False
             }
         ]
-    
-    def _is_path_allowed(self, path: Path) -> bool:
-        """检查路径是否在允许范围内"""
-        abs_path = path.resolve()
-        for allowed in self._allowed_paths:
-            allowed_abs = Path(allowed).resolve()
-            try:
-                abs_path.relative_to(allowed_abs)
-                return True
-            except ValueError:
-                continue
-        return False
     
     def execute(self, **kwargs) -> ToolResult:
         """读取文件"""
@@ -111,7 +137,7 @@ class ReadFileTool(BaseTool):
             return ToolResult(success=False, output="", error=f"读取文件失败: {str(e)}")
 
 
-class WriteFileTool(BaseTool):
+class WriteFileTool(PathSecurityMixin, BaseTool):
     """写入文件工具"""
     
     def __init__(self, allowed_paths: List[str] = None):
@@ -153,18 +179,6 @@ class WriteFileTool(BaseTool):
             }
         ]
     
-    def _is_path_allowed(self, path: Path) -> bool:
-        """检查路径是否在允许范围内"""
-        abs_path = path.resolve()
-        for allowed in self._allowed_paths:
-            allowed_abs = Path(allowed).resolve()
-            try:
-                abs_path.relative_to(allowed_abs)
-                return True
-            except ValueError:
-                continue
-        return False
-    
     def execute(self, **kwargs) -> ToolResult:
         """写入文件"""
         file_path = kwargs.get("file_path", "")
@@ -204,12 +218,13 @@ class WriteFileTool(BaseTool):
             return ToolResult(success=False, output="", error=f"写入文件失败: {str(e)}")
 
 
-class ListDirectoryTool(BaseTool):
+class ListDirectoryTool(PathSecurityMixin, BaseTool):
     """列出目录内容工具"""
     
     def __init__(self, allowed_paths: List[str] = None):
         self._allowed_paths = allowed_paths or ["./documents", "./uploads", "./output", "."]
         super().__init__()
+        PathSecurityMixin.__init__(self)
     
     @property
     def name(self) -> str:
@@ -247,6 +262,11 @@ class ListDirectoryTool(BaseTool):
         
         try:
             path = Path(directory)
+            
+            # 安全检查
+            error = self._check_path_in_allowed(path)
+            if error:
+                return error
             
             if not path.exists():
                 return ToolResult(success=False, output="", error=f"目录不存在: {directory}")
@@ -296,7 +316,7 @@ class ListDirectoryTool(BaseTool):
             return ToolResult(success=False, output="", error=f"列出目录失败: {str(e)}")
 
 
-class MoveFileTool(BaseTool):
+class MoveFileTool(PathSecurityMixin, BaseTool):
     """移动/重命名文件工具"""
     
     def __init__(self, allowed_paths: List[str] = None):
@@ -331,18 +351,6 @@ class MoveFileTool(BaseTool):
                 "required": True
             }
         ]
-    
-    def _is_path_allowed(self, path: Path) -> bool:
-        """检查路径是否在允许范围内"""
-        abs_path = path.resolve()
-        for allowed in self._allowed_paths:
-            allowed_abs = Path(allowed).resolve()
-            try:
-                abs_path.relative_to(allowed_abs)
-                return True
-            except ValueError:
-                continue
-        return False
     
     def execute(self, **kwargs) -> ToolResult:
         """移动文件"""
@@ -383,7 +391,7 @@ class MoveFileTool(BaseTool):
             return ToolResult(success=False, output="", error=f"移动失败: {str(e)}")
 
 
-class CreateDirectoryTool(BaseTool):
+class CreateDirectoryTool(PathSecurityMixin, BaseTool):
     """创建目录工具"""
     
     def __init__(self, allowed_paths: List[str] = None):
@@ -412,18 +420,6 @@ class CreateDirectoryTool(BaseTool):
                 "required": True
             }
         ]
-    
-    def _is_path_allowed(self, path: Path) -> bool:
-        """检查路径是否在允许范围内"""
-        abs_path = path.resolve()
-        for allowed in self._allowed_paths:
-            allowed_abs = Path(allowed).resolve()
-            try:
-                abs_path.relative_to(allowed_abs)
-                return True
-            except ValueError:
-                continue
-        return False
     
     def execute(self, **kwargs) -> ToolResult:
         """创建目录"""
@@ -462,7 +458,7 @@ class CreateDirectoryTool(BaseTool):
             return ToolResult(success=False, output="", error=f"创建目录失败: {str(e)}")
 
 
-class DeleteFileTool(BaseTool):
+class DeleteFileTool(PathSecurityMixin, BaseTool):
     """查看文件信息工具（已禁用删除功能，出于安全考虑）"""
     
     def __init__(self, allowed_paths: List[str] = None, require_confirmation: bool = True):
@@ -493,17 +489,6 @@ class DeleteFileTool(BaseTool):
             }
         ]
     
-    def _is_path_allowed(self, path: Path) -> bool:
-        abs_path = path.resolve()
-        for allowed in self._allowed_paths:
-            allowed_abs = Path(allowed).resolve()
-            try:
-                abs_path.relative_to(allowed_abs)
-                return True
-            except ValueError:
-                continue
-        return False
-    
     def execute(self, **kwargs) -> ToolResult:
         """查看文件信息（不执行删除）"""
         file_path = kwargs.get("file_path", "")
@@ -532,12 +517,14 @@ class DeleteFileTool(BaseTool):
             import datetime
             modified_time = datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
             
+            dir_emoji = '📁 目录'
+            file_emoji = '📄 文件'
             info_parts = [
                 f"文件信息: {file_path}",
-                f"类型: {'\ud83d\udcc1 目录' if is_dir else '\ud83d\udcc4 文件'}",
+                f"类型: {dir_emoji if is_dir else file_emoji}",
                 f"大小: {stat.st_size} 字节",
                 f"修改时间: {modified_time}",
-                f"\n⚠️ 注意：删除功能已禁用，出于安全考虑。如需删除文件，请手动操作。"
+                "\n⚠️ 注意：删除功能已禁用，出于安全考虑。如需删除文件，请手动操作。"
             ]
             
             if is_dir:

@@ -3,10 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#6366f1" />
+    <meta name="description" content="智能 RAG 知识库助手 - AI 驱动的知识检索与问答系统" />
     <title>RAG 知识库助手</title>
+    <!-- Google Fonts - Inter for premium typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      /* Prevent FOUC (Flash of Unstyled Content) */
+      html { visibility: hidden; }
+      html.loaded { visibility: visible; }
+    </style>
   </head>
   <body>
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
+    <script>
+      // Show content after fonts load
+      document.documentElement.classList.add('loaded');
+    </script>
   </body>
 </html>

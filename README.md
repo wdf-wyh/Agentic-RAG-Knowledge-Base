@@ -7,6 +7,7 @@
 ## 🌟 核心特性
 
 - **🤖 Agentic 架构**: 引入 ReAct 推理循环，支持自主规划、工具调用与反思。
+- **⚡ 极速响应**: Agent 响应时间优化到 **5-10 秒**（详见 [性能优化指南](docs/PERFORMANCE_OPTIMIZATION.md)）
 - **🔍 混合检索**: 向量检索 (ChromaDB) + BM25 稀疏检索 + Cross-encoder 精排。
 - **🌐 联网搜索**: 集成 SearXNG 隐私搜索引擎，支持实时信息获取。
 - **🧠 多模型生态**: 无缝切换 OpenAI, Google Gemini, Ollama (本地私有模型),DeepSeek。
@@ -80,6 +81,7 @@ docker-compose -f deploy/docker-compose.searxng.yml up -d
 ## 📖 核心文档
 
 - [✨ 快速上手指南 (START_HERE.md)](START_HERE.md) - 首次使用必读
+- [⚡ 性能优化指南 (docs/PERFORMANCE_OPTIMIZATION.md)](docs/PERFORMANCE_OPTIMIZATION.md) - 🆕 提升响应速度
 - [🧠 Agent 架构文档 (docs/AGENT_ARCHITECTURE.md)](docs/AGENT_ARCHITECTURE.md) - 理解系统原理
 - [🌐 SearXNG 配置 (docs/SEARXNG_SETUP.md)](docs/SEARXNG_SETUP.md) - 联网搜索功能
 - [📝 日志说明 (LOG_QUICK_GUIDE.md)](LOG_QUICK_GUIDE.md) - 排查问题
