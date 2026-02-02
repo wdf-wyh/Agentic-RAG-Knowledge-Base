@@ -1,15 +1,17 @@
 """RAG 检索增强生成模块"""
+import logging
 from typing import List, Optional, Any
 
 from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 from langchain.chat_models import init_chat_model
 from langchain_core.prompts import PromptTemplate
-from typing import Any
 
 from src.config.settings import Config
 from src.core.vector_store import VectorStore
 from src.core.bm25_retriever import BM25Retriever
 from src.models.schemas import ConversationMessage
+
+logger = logging.getLogger(__name__)
 
 try:
     from sentence_transformers import CrossEncoder
@@ -430,10 +432,10 @@ class RAGAssistant:
                 
                 # 如果过滤后没有足够相关的文档，返回空列表或标记结果
                 if not filtered_docs:
-                    print(f"[DEBUG] 检索到 0 个相似度 >= {similarity_threshold} 的文档")
+                    logger.debug(f"检索到 0 个相似度 >= {similarity_threshold} 的文档")
                     return []
                 
-                print(f"[DEBUG] 检索到 {len(filtered_docs)} 个相似度 >= {similarity_threshold} 的文档")
+                logger.debug(f"检索到 {len(filtered_docs)} 个相似度 >= {similarity_threshold} 的文档")
                 if rerank:
                     try:
                         return self.rerank_with_cross_encoder(query, filtered_docs, top_k=k)
@@ -441,7 +443,7 @@ class RAGAssistant:
                         return filtered_docs[:k]
                 return filtered_docs[:k]
         except Exception as e:
-            print(f"[DEBUG] 相似度阈值过滤失败: {e}，继续使用标准检索")
+            logger.debug(f"相似度阈值过滤失败: {e}，继续使用标准检索")
             # 若阈值筛选失败，继续执行标准检索
             pass
 

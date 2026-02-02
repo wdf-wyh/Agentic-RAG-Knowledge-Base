@@ -3,10 +3,12 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 import json
 import os
+import re
 import time
 import asyncio
 import traceback
 import logging
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +37,67 @@ _build_progress = {
     "current_file": "",
     "status": "idle"
 }
+
+
+def generate_trace_id() -> str:
+    """生成请求追踪 ID"""
+    return str(uuid.uuid4())[:8]
+
+
+def parse_llm_json_response(response_text: str) -> str:
+    """从 LLM 响应中解析 JSON answer 字段
+    
+    Args:
+        response_text: LLM 原始响应文本
+        
+    Returns:
+        解析出的答案文本，如果解析失败则返回原文本
+    """
+    s = response_text.strip()
+    
+    # 尝试直接解析完整 JSON
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, dict) and "answer" in parsed:
+            return str(parsed.get("answer", "")).strip()
+        return s
+    except json.JSONDecodeError:
+        pass
+    
+    # 尝试从文本中提取 JSON 对象
+    start_idx = s.find('{')
+    end_idx = s.rfind('}')
+    if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+        try:
+            maybe_json = s[start_idx:end_idx+1]
+            parsed = json.loads(maybe_json)
+            if isinstance(parsed, dict) and "answer" in parsed:
+                return str(parsed.get("answer", "")).strip()
+        except json.JSONDecodeError:
+            pass
+        
+        # 使用正则表达式提取 answer 字段
+        answer_match = re.search(r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)"', s)
+        if answer_match:
+            return answer_match.group(1).replace('\\"', '"').replace('\\n', '\n')
+    
+    return s
+
+
+async def stream_text_in_chunks(text: str, chunk_size: int = 20):
+    """分批流式发送文本，提高性能
+    
+    Args:
+        text: 要发送的文本
+        chunk_size: 每批发送的字符数
+        
+    Yields:
+        SSE 格式的数据块
+    """
+    for i in range(0, len(text), chunk_size):
+        chunk = text[i:i+chunk_size]
+        yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
+        await asyncio.sleep(0.05)  # 每批等待 50ms，比逐字符更高效
 
 
 def get_conversation_manager() -> ConversationManager:
@@ -292,8 +355,9 @@ async def delete_conversation(conversation_id: str):
 @router.post("/query-stream")
 async def query_stream(req: QueryRequest):
     """流式查询知识库（SSE）"""
+    trace_id = generate_trace_id()
     start_time = time.time()
-    logger.info(f"[Query Stream] 开始处理查询 - 问题: {req.question[:100]}..., Provider: {req.provider}")
+    logger.info(f"[{trace_id}] 开始处理查询 - 问题: {req.question[:100]}..., Provider: {req.provider}")
     
     if not load_assistant():
         error_msg = "向量数据库未加载。请先构建或确认数据库目录。"
@@ -310,14 +374,14 @@ async def query_stream(req: QueryRequest):
     # 如果没有提供会话ID，创建新会话
     if not conversation_id:
         conversation_id = conv_manager.create_conversation()
-        logger.info(f"[Conversation] 创建新会话: {conversation_id}")
+        logger.info(f"[{trace_id}] 创建新会话: {conversation_id}")
     
     # 添加用户消息到历史
     conv_manager.add_message(conversation_id, "user", req.question)
     
     # 获取历史消息
     history = req.history if req.history else conv_manager.get_history(conversation_id, max_messages=6)
-    logger.info(f"[Conversation] 会话 {conversation_id} - 历史消息数: {len(history)}")
+    logger.info(f"[{trace_id}] 会话 {conversation_id} - 历史消息数: {len(history)}")
     
     async def generate():
         try:
@@ -332,14 +396,14 @@ async def query_stream(req: QueryRequest):
                     docs = assistant.retrieve_documents(req.question, k=Config.TOP_K)
                     logger.info(f"[Ollama] 问题: {req.question}")
                     logger.info(f"[Ollama] 检索到 {len(docs)} 个文档")
-                    print(f"[DEBUG] 问题: {req.question}")
-                    print(f"[DEBUG] 检索到 {len(docs)} 个文档")
+                    logger.debug(f"[Ollama] 问题: {req.question}")
+                    logger.debug(f"[Ollama] 检索到 {len(docs)} 个文档")
                     
                     # 如果检索结果为空（由于相似度阈值过滤）
                     if not docs:
                         similarity_threshold = getattr(Config, 'SIMILARITY_THRESHOLD', None)
                         if similarity_threshold is not None:
-                            print(f"[DEBUG] 知识库中未找到与您的问题相关的文档（相似度阈值: {similarity_threshold}）")
+                            logger.debug(f"[Ollama] 知识库中未找到与您的问题相关的文档（相似度阈值: {similarity_threshold})")
                             yield f"data: {json.dumps({'type': 'sources', 'data': []})}\n\n"
                             yield f"data: {json.dumps({'type': 'content', 'data': '我无法根据现有知识库中的信息回答这个问题'})}\n\n"
                             yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -355,7 +419,7 @@ async def query_stream(req: QueryRequest):
                             contexts.append(str(doc))
                     
                     context_text = "\n\n".join(contexts)
-                    print(f"[DEBUG] 上下文总长度: {len(context_text)} 字符")
+                    logger.debug(f"[Ollama] 上下文总长度: {len(context_text)} 字符")
                     
                     # 构建对话历史上下文
                     conversation_context = ""
@@ -419,47 +483,20 @@ async def query_stream(req: QueryRequest):
                     )
                     
                     ai_elapsed = time.time() - ai_start
-                    logger.info(f"[Ollama] AI调用完成 - 耗时: {ai_elapsed:.2f}秒")
+                    logger.info(f"[{trace_id}] Ollama AI调用完成 - 耗时: {ai_elapsed:.2f}秒")
                     
-                    # 解析 Ollama 返回
-                    final_text = ""
+                    # 使用公共函数解析 Ollama 返回
                     s = str(ollama_result).strip()
-                    logger.info(f"[Ollama] 原始返回长度: {len(s)} 字符")
-                    print(f"[DEBUG] Ollama 原始返回 (前200字): {s[:200]}")
+                    logger.info(f"[{trace_id}] Ollama 原始返回长度: {len(s)} 字符")
+                    logger.debug(f"[{trace_id}] Ollama 原始返回 (前200字): {s[:200]}")
                     
-                    try:
-                        parsed = json.loads(s)
-                        if isinstance(parsed, dict) and "answer" in parsed:
-                            final_text = str(parsed.get("answer", "")).strip()
-                        else:
-                            final_text = s
-                    except Exception:
-                        start_idx = s.find('{')
-                        end_idx = s.rfind('}')
-                        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
-                            try:
-                                maybe_json = s[start_idx:end_idx+1]
-                                parsed2 = json.loads(maybe_json)
-                                if isinstance(parsed2, dict) and "answer" in parsed2:
-                                    final_text = str(parsed2.get("answer", "")).strip()
-                                else:
-                                    final_text = ""
-                            except Exception:
-                                import re
-                                answer_match = re.search(r'"answer"\s*:\s*"([^"]*(?:\\"[^"]*)*)"', s)
-                                if answer_match:
-                                    final_text = answer_match.group(1).replace('\\"', '"')
-                                else:
-                                    final_text = ""
-                        else:
-                            final_text = s
+                    final_text = parse_llm_json_response(s)
 
-                    # 逐字符发送
+                    # 分批流式发送（性能优化：每批20字符）
                     if final_text:
-                        logger.info(f"[Ollama] 开始流式返回答案，长度: {len(final_text)} 字符")
-                        for char in final_text:
-                            yield f"data: {json.dumps({'type': 'content', 'data': char})}\n\n"
-                            await asyncio.sleep(0.01)
+                        logger.info(f"[{trace_id}] 开始流式返回答案，长度: {len(final_text)} 字符")
+                        async for chunk in stream_text_in_chunks(final_text, chunk_size=20):
+                            yield chunk
                         
                         # 保存助手的回复到对话历史
                         conv_manager.add_message(conversation_id, "assistant", final_text, save_to_disk=True)
@@ -544,7 +581,7 @@ async def query_stream(req: QueryRequest):
                     yield f"data: {json.dumps({'type': 'sources', 'data': sources})}\n\n"
 
                     # 调用 DeepSeek
-                    logger.info(f"[DeepSeek] 开始调用AI生成答案 - 模型: {model_name}")
+                    logger.info(f"[{trace_id}] DeepSeek 开始调用AI生成答案 - 模型: {model_name}")
                     ai_start = time.time()
                     ds_result = deepseek_generate(
                         model=model_name,
@@ -557,44 +594,22 @@ async def query_stream(req: QueryRequest):
                     )
                     
                     ai_elapsed = time.time() - ai_start
-                    logger.info(f"[DeepSeek] AI调用完成 - 耗时: {ai_elapsed:.2f}秒")
+                    logger.info(f"[{trace_id}] DeepSeek AI调用完成 - 耗时: {ai_elapsed:.2f}秒")
 
-                    final_text = ""
+                    # 使用公共函数解析 DeepSeek 返回
                     s = str(ds_result).strip()
-                    logger.info(f"[DeepSeek] 原始返回长度: {len(s)} 字符")
-                    try:
-                        parsed = json.loads(s)
-                        if isinstance(parsed, dict) and 'answer' in parsed:
-                            final_text = str(parsed.get('answer', '')).strip()
-                        else:
-                            final_text = s
-                    except Exception:
-                        start_idx = s.find('{')
-                        end_idx = s.rfind('}')
-                        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
-                            try:
-                                maybe_json = s[start_idx:end_idx+1]
-                                parsed2 = json.loads(maybe_json)
-                                if isinstance(parsed2, dict) and 'answer' in parsed2:
-                                    final_text = str(parsed2.get('answer', '')).strip()
-                                else:
-                                    final_text = ''
-                            except Exception:
-                                import re
-                                answer_match = re.search(r'"answer"\s*:\s*"([^\"]*(?:\\\"[^\"]*)*)"', s)
-                                if answer_match:
-                                    final_text = answer_match.group(1).replace('\\"', '"')
-                                else:
-                                    final_text = ''
+                    logger.info(f"[{trace_id}] DeepSeek 原始返回长度: {len(s)} 字符")
+                    
+                    final_text = parse_llm_json_response(s)
 
+                    # 分批流式发送（性能优化：每批20字符）
                     if final_text:
-                        for char in final_text:
-                            yield f"data: {json.dumps({'type': 'content', 'data': char})}\n\n"
-                            await asyncio.sleep(0.01)
+                        async for chunk in stream_text_in_chunks(final_text, chunk_size=20):
+                            yield chunk
                         
                         # 保存助手的回复到对话历史
                         conv_manager.add_message(conversation_id, "assistant", final_text, save_to_disk=True)
-                        logger.info(f"[Conversation] 保存助手回复到会话 {conversation_id}")
+                        logger.info(f"[{trace_id}] 保存助手回复到会话 {conversation_id}")
 
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 except DeepSeekError as dse:

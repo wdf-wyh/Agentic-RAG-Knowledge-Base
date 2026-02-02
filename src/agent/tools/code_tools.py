@@ -149,6 +149,9 @@ class CodeExecutorTool(BaseTool):
         # 创建临时文件
         script_path = os.path.join(self._temp_dir, "script.py")
         
+        # 处理代码中的引号
+        escaped_code = code.replace('"', '\\"')
+        
         # 包装代码以捕获返回值
         wrapped_code = f'''
 import sys
@@ -162,7 +165,7 @@ os.chdir("{self._temp_dir}")
 try:
     result = None
     exec_globals = {{"__name__": "__main__"}}
-    exec("""{code.replace('"', '\\"')}""", exec_globals)
+    exec("""{escaped_code}""", exec_globals)
 except Exception as e:
     print(f"Error: {{e}}", file=sys.stderr)
     sys.exit(1)

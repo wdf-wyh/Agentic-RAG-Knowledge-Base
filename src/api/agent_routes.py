@@ -149,11 +149,10 @@ async def agent_query(req: AgentQueryRequest):
     if req.conversation_id:
         logger.info(f"[Agent Query] 使用会话ID: {req.conversation_id}")
     
-    # 如果指定了 provider，临时设置到 Config 中
-    original_provider = Config.MODEL_PROVIDER
-    if req.provider:
-        Config.MODEL_PROVIDER = req.provider
-        logger.info(f"[Agent Query] 已设置 MODEL_PROVIDER = {req.provider}")
+    # 注意：不再临时修改全局 Config.MODEL_PROVIDER，这在多线程环境下不安全
+    # 如果需要指定 provider，应该在创建 Agent 时传入或使用请求上下文
+    provider_to_use = req.provider or Config.MODEL_PROVIDER
+    logger.info(f"[Agent Query] 使用 Provider: {provider_to_use}")
     
     try:
         # 创建 Agent
@@ -164,6 +163,7 @@ async def agent_query(req: AgentQueryRequest):
             verbose=True
         )
         
+        # TODO: 未来应该支持在 RAGAgent 初始化时传入 provider 参数
         agent = RAGAgent(config=config)
         logger.info(f"[Agent Query] Agent已创建，注册工具数: {len(agent.tools)}")
         
@@ -224,10 +224,6 @@ async def agent_query(req: AgentQueryRequest):
         elapsed = time.time() - start_time
         logger.error(f"[Agent Query] 执行失败 - 耗时: {elapsed:.2f}秒, 错误: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # 恢复原来的 provider
-        if req.provider:
-            Config.MODEL_PROVIDER = original_provider
             logger.info(f"[Agent Query] 已恢复 MODEL_PROVIDER = {original_provider}")
 
 

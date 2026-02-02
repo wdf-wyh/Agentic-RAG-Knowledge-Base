@@ -58,8 +58,12 @@ def generate(
         # DeepSeek 可能支持更多参数：top_p、stop、presence_penalty 等，可按需扩展
     }
 
+    # 对于 LLM 生成，需要更长的超时时间
+    # 流式请求使用连接超时和读取超时的元组
+    timeout = (10, 120) if stream else 120
+
     try:
-        resp = requests.post(endpoint, headers=headers, json=payload, timeout=30, stream=stream)
+        resp = requests.post(endpoint, headers=headers, json=payload, timeout=timeout, stream=stream)
     except requests.RequestException as e:
         raise DeepSeekError(f"请求 DeepSeek API 失败: {e}")
 

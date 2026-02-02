@@ -60,17 +60,16 @@ class ConversationManager:
         Returns:
             添加的消息对象
         """
-        with self._lock:
-            if conversation_id not in self.active_sessions:
-                self.active_sessions[conversation_id] = []
-        
         message = ConversationMessage(
             role=role,
             content=content,
             timestamp=datetime.now().isoformat()
         )
         
-        self.active_sessions[conversation_id].append(message)
+        with self._lock:
+            if conversation_id not in self.active_sessions:
+                self.active_sessions[conversation_id] = []
+            self.active_sessions[conversation_id].append(message)
         
         if save_to_disk:
             self.save_conversation(conversation_id)
