@@ -13,6 +13,6 @@ export default defineConfig({
     }
   },
   define: {
-    __VITE_API_BASE__: JSON.stringify(process.env.VITE_API_BASE || 'http://localhost:8000/api')
+    __VITE_API_BASE__: JSON.stringify(process.env.VITE_API_BASE || '/api')
   }
 })

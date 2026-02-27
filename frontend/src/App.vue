@@ -486,7 +486,7 @@
 import axios from 'axios'
 import { Setting, PictureFilled, Loading } from '@element-plus/icons-vue'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 export default {
   components: {
