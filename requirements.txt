@@ -35,6 +35,7 @@ tiktoken>=0.12.0
 langchain-chroma>=0.1.0
 langchain-community>=0.0.20
 ollama>=0.1.0   # 如果你使用 Ollama，本条可选
+rank_bm25>=0.2.1
 # 可选：使用其他向量数据库
 # faiss-cpu>=1.7.4
 # pinecone-client>=3.0.0

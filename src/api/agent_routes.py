@@ -224,7 +224,7 @@ async def agent_query(req: AgentQueryRequest):
         elapsed = time.time() - start_time
         logger.error(f"[Agent Query] 执行失败 - 耗时: {elapsed:.2f}秒, 错误: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-            logger.info(f"[Agent Query] 已恢复 MODEL_PROVIDER = {original_provider}")
+        logger.info(f"[Agent Query] 已恢复 MODEL_PROVIDER = {original_provider}")
 
 
 @router.post("/smart-query")
