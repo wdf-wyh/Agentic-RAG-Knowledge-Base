@@ -17,6 +17,7 @@ class DocumentAnalysisTool(BaseTool):
         self._documents_path = documents_path or "./documents"
         super().__init__()
     
+
     @property
     def name(self) -> str:
         return "analyze_documents"
@@ -26,11 +27,15 @@ class DocumentAnalysisTool(BaseTool):
         return "分析知识库文档的结构和组织方式，识别问题并提供优化建议。"
     
     @property
+    # 返回工具的类别
     def category(self) -> ToolCategory:
         return ToolCategory.ANALYSIS
     
     @property
     def parameters(self) -> List[Dict[str, Any]]:
+        # 返回一个字典列表，每个字典描述一个参数（如名称、类型、描述、是否必需）
+        # 帮助 Agent 正确调用工具。
+        # 指定了 analysis_type 参数的详细信息，帮助 Agent 正确调用工具。
         return [
             {
                 "name": "analysis_type",
@@ -42,16 +47,19 @@ class DocumentAnalysisTool(BaseTool):
     
     def _analyze_structure(self, docs_path: Path) -> Dict[str, Any]:
         """分析目录结构"""
+        # analysis 是一个字典
         analysis = {
             "total_files": 0,
             "total_dirs": 0,
             "file_types": {},
+            # 它记录不同嵌套层级（深度）下文件的数量
             "depth_distribution": {},
             "issues": [],
             "suggestions": []
         }
         
         # 遍历文档目录
+        # 递归遍历，所有文件和子目录，返回一个生成器，用于逐个处理每个项目（如文件或目录），
         for item in docs_path.rglob("*"):
             if item.is_file():
                 analysis["total_files"] += 1
@@ -65,6 +73,7 @@ class DocumentAnalysisTool(BaseTool):
                 analysis["depth_distribution"][depth] = analysis["depth_distribution"].get(depth, 0) + 1
                 
             elif item.is_dir():
+                # 子目录总数
                 analysis["total_dirs"] += 1
         
         # 识别问题
@@ -77,8 +86,11 @@ class DocumentAnalysisTool(BaseTool):
             analysis["suggestions"].append("考虑使用 Markdown 格式以获得更好的可读性和结构化")
         
         # 检查是否有 README
+        # any() 是Python内置函数，用于检查生成器表达式中是否有任何元素为True
         readme_exists = any(
             f.name.lower() in ['readme.md', 'readme.txt', 'index.md']
+            # iterdir() 是 Path 对象的方法，用于遍历指定目录（docs_path）下的直接子项（文件和子目录）。
+            # 这里用于检查根目录中是否存在 README 或索引文件，如 readme.md 等。
             for f in docs_path.iterdir() if f.is_file()
         )
         if not readme_exists:
@@ -97,6 +109,7 @@ class DocumentAnalysisTool(BaseTool):
         }
         
         total_length = 0
+        # 识别内容过短的文档，并生成相应的分析问题和建议。
         short_docs = []
         
         for file_path in docs_path.rglob("*"):
@@ -108,9 +121,11 @@ class DocumentAnalysisTool(BaseTool):
                     
                     doc_info = {
                         "name": file_path.name,
+                        # 获取文件路径相对于根目录 docs_path 的相对路径
                         "path": str(file_path.relative_to(docs_path)),
                         "length": length,
                         "has_headings": '#' in content if file_path.suffix == '.md' else False,
+                        # 检查文档内容中是否存在代码块
                         "has_code_blocks": '```' in content
                     }
                     analysis["documents"].append(doc_info)
@@ -122,14 +137,17 @@ class DocumentAnalysisTool(BaseTool):
                     pass
         
         if analysis["documents"]:
+            # 整数除法运算符
+            # 平均字符长度
             analysis["avg_length"] = total_length // len(analysis["documents"])
         
         if short_docs:
             analysis["issues"].append(f"以下文档内容过短: {', '.join(short_docs[:5])}")
             analysis["suggestions"].append("考虑合并相关的短文档或扩充内容")
         
-        # 检查是否有文档缺少标题结构
+        # 检查是否有文档缺少标题结构  if not是否为 False
         no_headings = [d["name"] for d in analysis["documents"] if not d["has_headings"]]
+        # 是否包含标题结构的文档数量超过一半
         if no_headings and len(no_headings) > len(analysis["documents"]) / 2:
             analysis["issues"].append("大部分 Markdown 文档缺少标题结构")
             analysis["suggestions"].append("使用 # 标题来组织文档结构，有助于 RAG 检索")
@@ -138,6 +156,7 @@ class DocumentAnalysisTool(BaseTool):
     
     def execute(self, **kwargs) -> ToolResult:
         """执行文档分析"""
+        # 分析类型
         analysis_type = kwargs.get("analysis_type", "structure")
         
         try:

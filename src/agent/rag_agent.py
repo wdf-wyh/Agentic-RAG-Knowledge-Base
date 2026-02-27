@@ -75,21 +75,24 @@ class RAGAgent(BaseAgent):
         self._enable_web_search = enable_web_search
         self._enable_file_ops = enable_file_ops
         self._web_search_provider = web_search_provider
-        
+
         # 对话管理
+        # ConversationManager 是一个对话管理器类，用于处理和存储对话历史
         self._conversation_manager = conversation_manager or ConversationManager()
+        # 当前对话会话的唯一标识符
         self._current_conversation_id: Optional[str] = None
-        
+
         # 智能意图路由器（在 setup_tools 后初始化）
+        # 以是IntentRouter或None
         self._intent_router: Optional[IntentRouter] = None
 
         super().__init__(config)
         self.setup_tools()
-        
+
         # 初始化意图路由器（在工具注册后）
-        self._intent_router = IntentRouter(
-            available_tools=list(self.tools.keys())
-        )
+        # 是一个智能意图路由器类，用于分析用户问题的意图并决定最佳处理方式
+        # 这段代码初始化 IntentRouter 实例，并传入可用工具列表
+        self._intent_router = IntentRouter(available_tools=list(self.tools.keys()))
 
     def setup_tools(self):
         """设置 Agent 可用的工具"""
@@ -98,13 +101,17 @@ class RAGAgent(BaseAgent):
         rag_search = RAGSearchTool(
             vector_store=self._vector_store, assistant=self._assistant
         )
+        # ，用于将工具实例注册到 Agent 的工具字典中。
         self.register_tool(rag_search)
 
         # 2. 文档列表工具
+        # 是一个 RAG 工具类，用于列出知识库中的所有文档
         doc_list = DocumentListTool()
+        # 使 Agent 能够在推理过程中调用此工具来获取文档列表
         self.register_tool(doc_list)
 
         # 3. 知识库信息工具
+        # 用于获取知识库的统计信息。
         kb_info = KnowledgeBaseInfoTool(vector_store=self._vector_store)
         self.register_tool(kb_info)
 
@@ -112,20 +119,21 @@ class RAGAgent(BaseAgent):
         if self._enable_file_ops:
             import os
             from pathlib import Path
-            
+
             # 定义允许的文件操作路径
             home_dir = str(Path.home())
+            # /Users/apple/Desktop
             desktop_dir = str(Path.home() / "Desktop")
             documents_dir = str(Path.home() / "Documents")
             allowed_paths = [
                 "./documents",
-                "./uploads", 
+                "./uploads",
                 "./output",
                 home_dir,
                 desktop_dir,
-                documents_dir
+                documents_dir,
             ]
-            
+
             self.register_tool(ReadFileTool(allowed_paths=allowed_paths))
             self.register_tool(WriteFileTool(allowed_paths=allowed_paths))
             self.register_tool(ListDirectoryTool(allowed_paths=allowed_paths))
@@ -137,33 +145,60 @@ class RAGAgent(BaseAgent):
         if self._enable_web_search:
             web_search = WebSearchTool(provider=self._web_search_provider)
             self.register_tool(web_search)
+            # 执行时接受URL参数，获取网页的HTML内容或文本内容
             self.register_tool(FetchWebpageTool())
-            
+
             # 添加热搜工具
+            # 是一个热搜工具类，用于获取百度热搜榜单
             self.register_tool(BaiduTrendingTool())
+            # 是一个趋势新闻聚合工具类，用于收集和汇总多个来源的热门新闻。
             self.register_tool(TrendingNewsAggregatorTool())
 
         # 6. 分析工具
+        # 是一个分析工具类，用于分析文档内容
         self.register_tool(DocumentAnalysisTool())
+        # 是一个分析工具类，用于生成文档或内容的摘要。
         self.register_tool(SummarizeTool())
+        # 是一个分析工具类，用于生成结构化的报告。
         self.register_tool(GenerateReportTool())
-        
+
         # 7. 新增企业级工具
         try:
+            # 是一个记忆工具类，用于存储和检索临时信息或上下文
+            # 允许 Agent 在推理过程中存储关键信息，并在后续步骤中检索使用
+            # 这增强了 Agent 的记忆能力，支持更复杂的推理流程
+            #             多步骤任务中的信息传递
+            # 存储分析结果供后续使用
+            # 维护任务状态
             from src.agent.tools.memory_tools import MemoryTool
+
             self.register_tool(MemoryTool())
         except ImportError:
             pass
-        
+
         try:
+            # 是一个任务工具类，用于管理和执行复杂任务
+            # 允许 Agent 规划、分解和执行多步骤任务，支持任务状态跟踪和进度管理
+            #             多步骤工作流程
+            # 项目管理任务
+            # 自动化复杂操作
             from src.agent.tools.task_tools import TaskTool
+
             self.register_tool(TaskTool())
         except ImportError:
             pass
-        
+
         try:
+            # CodeExecutorTool 是一个代码执行工具类，用于安全地执行代码片段。
+            #  这允许 Agent 动态执行代码来解决问题。支持沙盒模式以确保安
             from src.agent.tools.code_tools import CodeExecutorTool, DataAnalysisTool
+
             self.register_tool(CodeExecutorTool(sandbox_mode=True))
+            # 是一个数据分析工具类，用于执行数据处理和分析任务。
+            #             数据清洗和预处理
+            # 统计分析和计算
+            # 生成数据可视化
+            # 这允许 Agent 动态执行数据分析任务。
             self.register_tool(DataAnalysisTool())
         except ImportError:
             pass
@@ -173,37 +208,40 @@ class RAGAgent(BaseAgent):
 
     def start_conversation(self) -> str:
         """开始新的对话会话
-        
+
         Returns:
             会话ID
         """
         self._current_conversation_id = self._conversation_manager.create_conversation()
         return self._current_conversation_id
-    
+
     def set_conversation(self, conversation_id: str):
         """设置当前会话ID
-        
+
         Args:
             conversation_id: 会话ID
         """
         self._current_conversation_id = conversation_id
-    
-    def get_conversation_history(self, max_messages: Optional[int] = None) -> List[ConversationMessage]:
+
+    #     List：来自 typing 模块的泛型类型，表示列表容器
+    # ConversationMessage：一个数据类（dataclass），用于表示对话消息的结构
+    def get_conversation_history(
+        self, max_messages: Optional[int] = None
+    ) -> List[ConversationMessage]:
         """获取当前会话的历史消息
-        
+
         Args:
             max_messages: 最多返回的消息数量
-            
+
         Returns:
             消息列表
         """
         if not self._current_conversation_id:
             return []
         return self._conversation_manager.get_history(
-            self._current_conversation_id, 
-            max_messages=max_messages
+            self._current_conversation_id, max_messages=max_messages
         )
-    
+
     def clear_conversation(self):
         """清空当前会话的历史"""
         if self._current_conversation_id:
@@ -226,110 +264,128 @@ class RAGAgent(BaseAgent):
         """
         import pytz
         from datetime import datetime
-        
+
         # 保存用户消息到历史
         if save_to_history and self._current_conversation_id:
             self._conversation_manager.add_message(
                 self._current_conversation_id, "user", question
             )
-        
+
         # 获取对话历史
         chat_history = ""
         if self._current_conversation_id:
+            # 将对话历史转换为适合 LLM 输入的字符串格式，通常是交替的用户和助手消息
             chat_history = self._conversation_manager.format_history_for_llm(
-                self._current_conversation_id,
-                max_turns=5
+                self._current_conversation_id, max_turns=5
             )
-        
+
         # 获取当前时间
-        tz = pytz.timezone('Asia/Shanghai')
+        tz = pytz.timezone("Asia/Shanghai")
         current_date = datetime.now(tz).strftime("%Y年%m月%d日 %H:%M:%S")
-        
+
         # 第一步：使用大模型分析问题意图
         logger.info(f"[SmartQuery] 开始分析问题意图: {question[:50]}...")
-        
+        # 智能意图路由器实例
         if self._intent_router:
+            # 使用大模型分析用户问题的意图类型、置信度、理由和建议工具
             analysis = self._intent_router.analyze_intent(
-                question=question,
-                chat_history=chat_history,
-                current_date=current_date
+                question=question, chat_history=chat_history, current_date=current_date
             )
-            
+    # 当设置为 True 时，Agent 会打印详细的分析结果、推理过程和工具使用情况
             if self.config.verbose:
                 print(f"\n🧠 意图分析结果:")
                 print(f"   意图类型: {analysis.intent.value}")
                 print(f"   置信度: {analysis.confidence:.2f}")
                 print(f"   分析理由: {analysis.reasoning}")
                 print(f"   建议工具: {analysis.suggested_tools}")
-            
-            logger.info(f"[SmartQuery] 意图: {analysis.intent.value}, 置信度: {analysis.confidence}")
-            
+
+            logger.info(
+                f"[SmartQuery] 意图: {analysis.intent.value}, 置信度: {analysis.confidence}"
+            )
+
             # 第二步：根据意图决定处理方式
             routing = self._intent_router.get_routing_decision(analysis)
-            
+
             # 处理直接对话/历史问题
             if analysis.intent == IntentType.CONVERSATION:
                 # 直接从历史对话中回答
-                response = self._handle_conversation_intent(question, chat_history, analysis)
-                if save_to_history and self._current_conversation_id and response.success:
+                response = self._handle_conversation_intent(
+                    question, chat_history, analysis
+                )
+                if (
+                    save_to_history
+                    and self._current_conversation_id
+                    and response.success
+                ):
                     self._conversation_manager.add_message(
                         self._current_conversation_id, "assistant", response.answer
                     )
                 return response
-            
+
             # 处理直接回答（常识、简单计算等）
             if analysis.intent == IntentType.DIRECT_ANSWER:
                 response = self._handle_direct_answer(question, analysis)
-                if save_to_history and self._current_conversation_id and response.success:
+                if (
+                    save_to_history
+                    and self._current_conversation_id
+                    and response.success
+                ):
                     self._conversation_manager.add_message(
                         self._current_conversation_id, "assistant", response.answer
                     )
                 return response
-            
+
             # 处理知识库查询（简单RAG）
-            if analysis.intent == IntentType.KNOWLEDGE_BASE and analysis.confidence >= 0.8:
+            if (
+                analysis.intent == IntentType.KNOWLEDGE_BASE
+                # 大模型对意图分析结果的信心程度，值越高表示分析越可靠
+                and analysis.confidence >= 0.8
+            ):
                 rag_tool = self.tools.get("rag_search")
                 if rag_tool:
-                    result = rag_tool.execute(query=question, generate_answer=True, top_k=3)
+                    result = rag_tool.execute(
+                        query=question, generate_answer=True, top_k=3
+                    )
                     if result.success and result.output:
                         response = AgentResponse(
                             success=True,
                             answer=result.output,
                             thought_process=[],
                             tools_used=["rag_search"],
+                            # Agent 在处理问题时进行的推理轮数
                             iterations=1,
                         )
                         if save_to_history and self._current_conversation_id:
                             self._conversation_manager.add_message(
-                                self._current_conversation_id, "assistant", result.output
+                                self._current_conversation_id,
+                                "assistant",
+                                result.output,
                             )
                         return response
-        
+
         # 第三步：复杂问题使用完整 Agent 推理
         logger.info(f"[SmartQuery] 使用完整Agent推理流程")
+        # 当问题复杂时，启用多步骤推理、工具调用和反思机制来解决问题
         response = self.run(question, chat_history)
-        
+
         # 保存助手回复到历史
         if save_to_history and self._current_conversation_id and response.success:
             self._conversation_manager.add_message(
                 self._current_conversation_id, "assistant", response.answer
             )
-        
+
         return response
-    
+
     def _handle_conversation_intent(
-        self, 
-        question: str, 
-        chat_history: str,
-        analysis: IntentAnalysis
+        self, question: str, chat_history: str, analysis: IntentAnalysis
     ) -> AgentResponse:
         """处理涉及历史对话的问题
-        
+
         Args:
             question: 用户问题
             chat_history: 历史对话
             analysis: 意图分析结果
-            
+
         Returns:
             AgentResponse
         """
@@ -349,8 +405,10 @@ class RAGAgent(BaseAgent):
             if isinstance(response, str):
                 answer = response
             else:
-                answer = response.content if hasattr(response, 'content') else str(response)
-            
+                answer = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
+
             return AgentResponse(
                 success=True,
                 answer=answer + "\n\n来源: 对话历史",
@@ -367,18 +425,16 @@ class RAGAgent(BaseAgent):
                 tools_used=[],
                 iterations=0,
             )
-    
+
     def _handle_direct_answer(
-        self, 
-        question: str,
-        analysis: IntentAnalysis
+        self, question: str, analysis: IntentAnalysis
     ) -> AgentResponse:
         """处理可以直接回答的问题（常识、计算等）
-        
+
         Args:
             question: 用户问题
             analysis: 意图分析结果
-            
+
         Returns:
             AgentResponse
         """
@@ -394,8 +450,10 @@ class RAGAgent(BaseAgent):
             if isinstance(response, str):
                 answer = response
             else:
-                answer = response.content if hasattr(response, 'content') else str(response)
-            
+                answer = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
+
             return AgentResponse(
                 success=True,
                 answer=answer,

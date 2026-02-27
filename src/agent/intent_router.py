@@ -21,33 +21,45 @@ logger = logging.getLogger(__name__)
 
 class IntentType(Enum):
     """意图类型枚举"""
-    KNOWLEDGE_BASE = "knowledge_base"     # 需要查询知识库
-    WEB_SEARCH = "web_search"             # 需要联网搜索
-    DIRECT_ANSWER = "direct_answer"       # 大模型直接回答
-    CONVERSATION = "conversation"          # 涉及历史对话
-    FILE_OPERATION = "file_operation"     # 文件操作
-    MULTI_STEP = "multi_step"             # 复杂多步骤任务
-    TRENDING = "trending"                  # 热搜/趋势查询
+
+    KNOWLEDGE_BASE = "knowledge_base"  # 需要查询知识库
+    WEB_SEARCH = "web_search"  # 需要联网搜索
+    DIRECT_ANSWER = "direct_answer"  # 大模型直接回答
+    CONVERSATION = "conversation"  # 涉及历史对话
+    FILE_OPERATION = "file_operation"  # 文件操作
+    MULTI_STEP = "multi_step"  # 复杂多步骤任务
+    TRENDING = "trending"  # 热搜/趋势查询
 
 
 @dataclass
 class IntentAnalysis:
     """意图分析结果"""
+
     intent: IntentType
-    confidence: float           # 置信度 0-1
-    reasoning: str              # 分析理由
+    # 作用机制：confidence 由 LLM 在分析问题时生成，表示它对意图分类（如 knowledge_base 或
+    # web_search）的信心水平。例如，如果 LLM 认为问题 90% 可能是知识库查询，则设为 0.9。
+    # 示例：对于问题"什么是机器学习？"，confidence 可能为 0.95（知识库查询）；对于模糊问题"帮我查查"，可能为 0.3（触发重分析）
+    #     “重分析”是指当意图分析的置信度较低时，系统重新调用大模型（LLM）对用户问题进行二次分析，
+    # 以提高判断准确性。在 intent_router.py 中的潜在实现如下：
+
+    # 概念解释
+    # 触发条件：if analysis.confidence < 0.7（例如，低于70%置信度）。
+    # 目的：避免低质量的意图判断导致错误路由，提高系统的可靠性。
+    confidence: float  # 置信度 0-1
+    # LLM 输出的分析过程和判断依据，例如"问题涉及专业概念和技术知识，应查询知识库"。
+    reasoning: str  # 分析理由
     suggested_tools: List[str]  # 建议使用的工具
-    sub_questions: List[str]    # 分解的子问题（如果是复杂问题）
-    needs_realtime: bool        # 是否需要实时信息
-    topic_keywords: List[str]   # 问题的关键词
+    sub_questions: List[str]  # 分解的子问题（如果是复杂问题）
+    needs_realtime: bool  # 是否需要实时信息
+    topic_keywords: List[str]  # 问题的关键词
 
 
 class IntentRouter:
     """智能意图路由器
-    
+
     使用大模型分析用户问题，决定最佳处理方式
     """
-    
+
     INTENT_ANALYSIS_PROMPT = """你是一个智能问题分析助手。你的任务是分析用户的问题，判断应该如何处理。
 
 【当前信息】
@@ -101,17 +113,18 @@ class IntentRouter:
 
     def __init__(self, available_tools: List[str] = None):
         """初始化意图路由器
-        
+
         Args:
             available_tools: 可用工具列表
         """
         self.available_tools = available_tools or []
         self.llm = self._init_llm()
-        
+
     def _init_llm(self):
         """初始化 LLM"""
         if Config.MODEL_PROVIDER == "ollama":
             from langchain_community.llms import Ollama
+
             return Ollama(
                 base_url=Config.OLLAMA_API_URL,
                 model=Config.OLLAMA_MODEL,
@@ -119,6 +132,7 @@ class IntentRouter:
             )
         elif Config.MODEL_PROVIDER == "deepseek":
             from langchain_deepseek import ChatDeepSeek
+
             return ChatDeepSeek(
                 model=Config.LLM_MODEL,
                 temperature=0.1,
@@ -126,59 +140,68 @@ class IntentRouter:
             )
         else:
             from langchain.chat_models import init_chat_model
+
             return init_chat_model(
                 Config.LLM_MODEL,
                 temperature=0.1,
                 model_provider=Config.MODEL_PROVIDER,
             )
-    
+
     def analyze_intent(
-        self, 
-        question: str, 
-        chat_history: str = "",
-        current_date: str = ""
+        self, question: str, chat_history: str = "", current_date: str = ""
     ) -> IntentAnalysis:
         """分析用户问题的意图
-        
+
         Args:
             question: 用户问题
             chat_history: 历史对话
             current_date: 当前日期
-            
+
         Returns:
             IntentAnalysis 意图分析结果
         """
         import pytz
         from datetime import datetime
-        
+
         if not current_date:
-            tz = pytz.timezone('Asia/Shanghai')
+            # 获取当前日期和时间，并格式化为字符串
+            tz = pytz.timezone("Asia/Shanghai")
             current_date = datetime.now(tz).strftime("%Y年%m月%d日 %H:%M:%S")
-        
+
         # 构建提示词
+        # format 方法是 Python 字符串对象的内置方法，用于格式化字符串。
+        # 它将字符串模板中的占位符（如 {current_date}）替换为实际的值，从而动态生成提示词（prompt）。
         prompt = self.INTENT_ANALYSIS_PROMPT.format(
             current_date=current_date,
-            available_tools=", ".join(self.available_tools) if self.available_tools else "rag_search, web_search, 文件操作工具",
+            available_tools=(
+                ", ".join(self.available_tools)
+                if self.available_tools
+                else "rag_search, web_search, 文件操作工具"
+            ),
             chat_history=chat_history or "无历史对话",
-            question=question
+            question=question,
         )
-        
+
         try:
             # 调用大模型分析
             logger.info(f"[IntentRouter] 分析问题意图: {question[:50]}...")
             response = self.llm.invoke(prompt)
-            
+
             if isinstance(response, str):
                 result_text = response
             else:
-                result_text = response.content if hasattr(response, 'content') else str(response)
-            
+                result_text = (
+                    response.content if hasattr(response, "content") else str(response)
+                )
+
             # 解析 JSON 结果
             analysis = self._parse_analysis_result(result_text)
-            logger.info(f"[IntentRouter] 意图分析完成: {analysis.intent.value}, 置信度: {analysis.confidence}")
-            
+            logger.info(
+                f"[IntentRouter] 意图分析完成: {analysis.intent.value}, 置信度: {analysis.confidence}"
+            )
+
             return analysis
-            
+
         except Exception as e:
             logger.error(f"[IntentRouter] 意图分析失败: {e}")
             # 返回默认分析结果
@@ -189,40 +212,48 @@ class IntentRouter:
                 suggested_tools=["rag_search"],
                 sub_questions=[question],
                 needs_realtime=False,
-                topic_keywords=[]
+                topic_keywords=[],
             )
-    
+
     def _parse_analysis_result(self, result_text: str) -> IntentAnalysis:
         """解析大模型返回的分析结果
-        
+
         Args:
             result_text: 大模型返回的文本
-            
+
         Returns:
             IntentAnalysis 对象
         """
         import re
-        
+
         # 尝试提取 JSON
-        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', result_text)
+        json_match = re.search(r"```json\s*([\s\S]*?)\s*```", result_text)
         if json_match:
             json_str = json_match.group(1)
         else:
             # 尝试直接解析
-            json_match = re.search(r'\{[\s\S]*\}', result_text)
+            json_match = re.search(r"\{[\s\S]*\}", result_text)
             if json_match:
                 json_str = json_match.group(0)
             else:
                 raise ValueError("无法从响应中提取 JSON")
-        
+
         try:
+            # 将 JSON 格式的字符串解析为 Python 对象（如字典、列表等）
+            # 返回 {'key': 'value'}
             data = json.loads(json_str)
+        #         except json.JSONDecodeError as e: 捕获 JSON 解析错误，并将异常对象赋值给变量 e。
+        # logger.warning(f"JSON 解析失败: {e}"): 记录警告日志，显示解析失败的原因。
+        # raise: 重新抛出异常，让上层代码处理。
         except json.JSONDecodeError as e:
             logger.warning(f"JSON 解析失败: {e}")
             raise
-        
+
         # 解析意图类型
+        #         如果 "intent" 键存在，返回其对应的值。
+        # 如果不存在，返回默认值 "multi_step"
         intent_str = data.get("intent", "multi_step")
+        # intent_map 是一个字典，用于将从 JSON 中解析出的字符串意图类型映射到 IntentType 枚举值
         intent_map = {
             "knowledge_base": IntentType.KNOWLEDGE_BASE,
             "web_search": IntentType.WEB_SEARCH,
@@ -233,7 +264,13 @@ class IntentRouter:
             "trending": IntentType.TRENDING,
         }
         intent = intent_map.get(intent_str, IntentType.MULTI_STEP)
-        
+# intent: IntentType 枚举，表示分析出的意图类型。
+# confidence: float，置信度（0-1），表示分析的可靠性。
+# reasoning: str，分析理由。
+# suggested_tools: List[str]，建议使用的工具列表。
+# sub_questions: List[str]，分解的子问题（用于复杂任务）。
+# needs_realtime: bool，是否需要实时信息。
+# topic_keywords: List[str]，问题的关键词
         return IntentAnalysis(
             intent=intent,
             confidence=float(data.get("confidence", 0.5)),
@@ -241,15 +278,15 @@ class IntentRouter:
             suggested_tools=data.get("suggested_tools", []),
             sub_questions=data.get("sub_questions", []),
             needs_realtime=data.get("needs_realtime", False),
-            topic_keywords=data.get("topic_keywords", [])
+            topic_keywords=data.get("topic_keywords", []),
         )
-    
+
     def get_routing_decision(self, analysis: IntentAnalysis) -> Dict[str, Any]:
         """根据意图分析结果，返回路由决策
-        
+
         Args:
             analysis: 意图分析结果
-            
+
         Returns:
             路由决策字典
         """
@@ -261,48 +298,56 @@ class IntentRouter:
             "direct_llm": False,  # 是否直接使用LLM回答
             "priority_tools": [],  # 优先使用的工具列表
         }
-        
+
         if analysis.intent == IntentType.KNOWLEDGE_BASE:
             decision["use_agent"] = False  # 简单RAG查询不需要完整Agent
             decision["primary_tool"] = "rag_search"
             decision["skip_web"] = True
             decision["priority_tools"] = ["rag_search"]
-            
+
         elif analysis.intent == IntentType.WEB_SEARCH:
             decision["use_agent"] = True
             decision["primary_tool"] = "web_search"
             decision["skip_rag"] = True
             decision["priority_tools"] = ["web_search", "fetch_webpage"]
-            
+
         elif analysis.intent == IntentType.DIRECT_ANSWER:
             decision["use_agent"] = False
             decision["direct_llm"] = True
             decision["skip_rag"] = True
             decision["skip_web"] = True
-            
+
         elif analysis.intent == IntentType.CONVERSATION:
             decision["use_agent"] = False  # 从历史对话直接回答
             decision["skip_rag"] = True
             decision["skip_web"] = True
-            
+# 文件操作
         elif analysis.intent == IntentType.FILE_OPERATION:
             decision["use_agent"] = True
             decision["primary_tool"] = "file_tools"
             decision["skip_rag"] = True
             decision["skip_web"] = True
             decision["priority_tools"] = [
-                "read_file", "write_file", "list_directory", 
-                "move_file", "create_directory", "delete_file"
+                "read_file",
+                "write_file",
+                "list_directory",
+                "move_file",
+                "create_directory",
+                "delete_file",
             ]
-            
+# 用户想了解热搜、热门话题、趋势信息，如当前热门新闻或流行话题
         elif analysis.intent == IntentType.TRENDING:
             decision["use_agent"] = True
             decision["primary_tool"] = "trending"
             decision["skip_rag"] = True
-            decision["priority_tools"] = ["baidu_trending", "trending_news", "web_search"]
-            
+            decision["priority_tools"] = [
+                "baidu_trending",
+                "trending_news",
+                "web_search",
+            ]
+
         elif analysis.intent == IntentType.MULTI_STEP:
             decision["use_agent"] = True
             decision["priority_tools"] = analysis.suggested_tools
-        
+
         return decision
