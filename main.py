@@ -2,7 +2,7 @@
 """
 RAG 知识库系统 - 命令行主程序
 
-兼容旧的 main.py 入口，重定向到新的 CLI 模块
+兼容旧的 main.py 入口，重定向到新的 CLI 模块  
 """
 import sys
 import os
