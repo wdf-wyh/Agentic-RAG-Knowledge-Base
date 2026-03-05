@@ -86,7 +86,12 @@ def create_app() -> FastAPI:
             ],
             "docs": "/docs"
         }
-    
+
+    @app.get("/health")
+    async def health_check():
+        """Docker / 负载均衡健康检查端点"""
+        return {"status": "ok"}
+
     return app
 
 

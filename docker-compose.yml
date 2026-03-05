@@ -1,0 +1,98 @@
+# ====================================================
+# RAG 知识库 Docker Compose 编排配置
+# 包含：后端 API、前端 Nginx、（可选）Ollama
+#
+# 使用方法：
+#   cp .env.example .env          # 填写 API Key
+#   docker compose up -d --build  # 启动所有服务
+#   docker compose logs -f        # 查看日志
+# ====================================================
+
+services:
+
+  # -------- 后端 API 服务 --------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: rag-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - API_RELOAD=false
+      - VECTOR_DB_PATH=/app/vector_db
+    ports:
+      - "8000:8000"    # 可按需关闭，通过 nginx 代理访问
+    volumes:
+      - ./vector_db:/app/vector_db       # 向量数据库持久化
+      - ./documents:/app/documents       # 知识库文档
+      - ./uploads:/app/uploads           # 用户上传文件
+      - ./logs:/app/logs                 # 日志文件
+      - ./conversations:/app/conversations  # 对话历史
+      - ./memory:/app/memory             # Agent 记忆
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # -------- 前端 Nginx 服务 --------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: rag-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      # - "443:443"   # 开启 HTTPS 时取消注释
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - rag-network
+    # volumes:
+    #   - ./frontend/nginx.conf:/etc/nginx/nginx.conf:ro   # 热更新 nginx 配置
+    #   - /etc/nginx/ssl:/etc/nginx/ssl:ro                 # SSL 证书（HTTPS 时使用）
+
+  # -------- Ollama 本地 LLM（可选）--------
+  # 如果使用云端 API（DeepSeek/OpenAI/Gemini），注释掉此服务
+  # 如果服务器有 GPU，将 deploy.resources 配置取消注释
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: rag-ollama
+  #   restart: unless-stopped
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama    # 模型文件持久化
+  #   networks:
+  #     - rag-network
+  #   # GPU 支持（需要 nvidia-container-toolkit）
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 30s
+
+# -------- 持久化卷 --------
+volumes:
+  # ollama_data:    # 启用 Ollama 时取消注释
+    # driver: local
+
+# -------- 网络 --------
+networks:
+  rag-network:
+    driver: bridge
