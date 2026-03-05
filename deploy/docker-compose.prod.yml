@@ -1,0 +1,237 @@
+# 腾讯云服务器生产部署方案
+# 使用方式: docker-compose -f deploy/docker-compose.prod.yml up -d
+
+version: '3.8'
+
+services:
+  # Nginx 反向代理 + 前端静态资源
+  # 解决跨域问题，一个 IP/端口 对外服务
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rag-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"      # HTTP
+      - "443:443"    # HTTPS (可选，需证书)
+    depends_on:
+      - api
+    networks:
+      - rag-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # 后端 API 服务
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-backend
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      # 日志配置
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      
+      # 数据库配置（使用腾讯云 CDB）
+      - DATABASE_URL=postgresql://${DB_USER:-rag_user}:${DB_PASSWORD}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-rag_db}
+      
+      # Redis 缓存配置（使用腾讯云 Redis）
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/${REDIS_DB:-0}
+      
+      # Ollama 本地模型 API
+      - OLLAMA_API_URL=http://ollama:11434
+      
+      # SearXNG 搜索引擎（可选）
+      - SEARXNG_URL=http://searxng:8080
+      
+      # 向量存储配置
+      - VECTOR_STORE_PATH=/app/vector_db
+      - DOCUMENT_PATH=/app/documents
+      
+      # 腾讯云特定配置
+      - TENCENT_COS_BUCKET=${TENCENT_COS_BUCKET:-}          # COS 对象存储桶名（可选）
+      - TENCENT_COS_REGION=${TENCENT_COS_REGION:-}          # COS 地域
+      - TENCENT_SECRET_ID=${TENCENT_SECRET_ID:-}            # 腾讯云 Secret ID
+      - TENCENT_SECRET_KEY=${TENCENT_SECRET_KEY:-}          # 腾讯云 Secret Key
+      
+      # 模型配置（后端默认）
+      - DEFAULT_LLM_PROVIDER=${DEFAULT_LLM_PROVIDER:-ollama}
+      - DEFAULT_EMBEDDING_MODEL=${DEFAULT_EMBEDDING_MODEL:-nomic-embed-text}
+      
+      # API 配置
+      - API_WORKERS=${API_WORKERS:-4}
+      - API_TIMEOUT=${API_TIMEOUT:-30}
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    
+    networks:
+      - rag-network
+    
+    volumes:
+      # 持久化文档和向量数据库
+      - ./documents:/app/documents
+      - ./vector_db:/app/vector_db
+      - ./logs:/app/logs
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-s", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # PostgreSQL 数据库
+  # 建议：如果使用腾讯云 CDB，删除此服务，更新 DATABASE_URL 指向 RDS 服务器
+  postgres:
+    image: postgres:15-alpine
+    container_name: rag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-rag_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_me}
+      POSTGRES_DB: ${DB_NAME:-rag_db}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    
+    networks:
+      - rag-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-rag_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Redis 缓存
+  # 建议：如果使用腾讯云 Redis，删除此服务，更新 REDIS_URL
+  redis:
+    image: redis:7-alpine
+    container_name: rag-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-change_me}
+    
+    volumes:
+      - redis_data:/data
+    
+    networks:
+      - rag-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Ollama 本地 LLM 推理引擎
+  # GPU 支持：需要 NVIDIA Docker
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    restart: unless-stopped
+    
+    expose:
+      - "11434"
+    
+    environment:
+      - OLLAMA_NUM_GPU=${OLLAMA_NUM_GPU:-0}    # 0=不用GPU，1=用1张GPU
+      - OLLAMA_MODELS_DIR=/root/.ollama
+    
+    volumes:
+      - ollama_data:/root/.ollama
+    
+    networks:
+      - rag-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    
+    # GPU 支持（腾讯云 GPU 实例）
+    # 取消注释以启用 GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # SearXNG 元搜索引擎
+  # 用于网络搜索功能，如不需要可删除
+  searxng:
+    image: searxng/searxng:latest
+    container_name: rag-searxng
+    restart: unless-stopped
+    
+    expose:
+      - "8080"
+    
+    environment:
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-change_me_with_random_string}
+      - SEARXNG_BASE_URL=http://searxng:8080/
+    
+    volumes:
+      - ./deploy/searxng:/etc/searxng:rw
+    
+    networks:
+      - rag-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  ollama_data:
+    driver: local
+
+networks:
+  rag-network:
+    driver: bridge
