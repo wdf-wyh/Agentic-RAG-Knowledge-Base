@@ -276,6 +276,71 @@ async def smart_query(req: SmartQueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/smart-query-stream")
+async def smart_query_stream(req: SmartQueryRequest):
+    """流式智能查询 - 意图路由 + 实时流式输出答案 token"""
+    logger.info(f"[Smart Stream] 开始处理 - 问题: {req.question[:100]}...")
+
+    async def generate():
+        import queue
+        import threading
+
+        try:
+            agent = get_or_create_agent("full")
+
+            if req.conversation_id:
+                agent.set_conversation(req.conversation_id)
+
+            event_queue = queue.Queue()
+
+            def stream_worker():
+                try:
+                    for event in agent.smart_query_stream(
+                        req.question,
+                        save_to_history=bool(req.conversation_id)
+                    ):
+                        event_queue.put(event)
+                    event_queue.put(None)  # 结束标记
+                except Exception as e:
+                    event_queue.put(Exception(str(e)))
+
+            worker_thread = threading.Thread(target=stream_worker, daemon=True)
+            worker_thread.start()
+
+            while True:
+                try:
+                    event = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: event_queue.get(timeout=0.1)
+                    )
+                except Exception:
+                    if not worker_thread.is_alive():
+                        break
+                    continue
+
+                if event is None:
+                    break
+                if isinstance(event, Exception):
+                    yield f"data: {json.dumps({'type': 'error', 'data': str(event)}, ensure_ascii=False)}\n\n"
+                    break
+
+                event_data = {
+                    'type': event.type,
+                    'data': event.data,
+                    'step': event.step,
+                }
+                yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+
+                if event.type not in ('answer_token', 'token'):
+                    await asyncio.sleep(0.01)
+
+        except Exception as e:
+            logger.error(f"[Smart Stream] 失败: {str(e)}")
+            yield f"data: {json.dumps({'type': 'error', 'data': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @router.post("/query-stream")
 async def agent_query_stream(req: AgentQueryRequest):
     """流式 Agent 查询 - 实时返回 LLM 推理过程（token 级别）"""

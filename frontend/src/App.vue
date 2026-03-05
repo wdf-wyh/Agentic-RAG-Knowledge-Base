@@ -1160,46 +1160,151 @@ export default {
       }
     },
     
-    // 智能路由查询
+    // 智能路由查询（流式）
     async sendSmartQuery(q) {
       const msgIdx = this.messages.length
       this.messages.push({
         role: 'assistant',
         content: '',
         sources: [],
-        finished: false
+        thoughtProcess: [],
+        toolsUsed: [],
+        finished: false,
+        streamingTokens: ''
       })
-      
+
+      // RAF 批量刷新：把 token 更新合并到 ~60fps，避免每 token 触发全量重渲染
+      let rafId = null
+      const flushNow = () => {
+        if (rafId) { cancelAnimationFrame(rafId); rafId = null }
+        this.$set(this.messages, msgIdx, { ...this.messages[msgIdx] })
+      }
+      const scheduleFlush = () => {
+        if (rafId) return
+        rafId = requestAnimationFrame(() => { rafId = null; this.$set(this.messages, msgIdx, { ...this.messages[msgIdx] }) })
+      }
+
       try {
         const payload = {
           question: q,
           conversation_id: this.conversationId || null
         }
-        
-        const response = await fetch(`${API_BASE}/agent/smart-query`, {
+
+        // 如果还没有会话 ID，先创建一个
+        if (!this.conversationId) {
+          await this.createNewConversation()
+          payload.conversation_id = this.conversationId
+        }
+
+        const response = await fetch(`${API_BASE}/agent/smart-query-stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         })
-        
-        const data = await response.json()
-        if (data.success) {
-          this.messages[msgIdx].content = data.answer
-          this.messages[msgIdx].sources = data.sources || []
-          
-          // 如果还没有会话 ID，创建一个
-          if (!this.conversationId) {
-            await this.createNewConversation()
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let answerContent = ''
+        let isStreamingAnswer = false
+        let streamDone = false
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done || streamDone) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop()
+
+          for (let line of lines) {
+            if (!line.startsWith('data: ')) continue
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (data.type === 'start') {
+                this.messages[msgIdx].content = '🧠 ' + (data.data || '正在分析...')
+                flushNow()
+              } else if (data.type === 'intent') {
+                const intentLabels = {
+                  knowledge_base: '📚 知识库查询',
+                  web_search: '🌐 联网搜索',
+                  direct_answer: '💬 直接回答',
+                  conversation: '💭 历史对话',
+                  file_operation: '📁 文件操作',
+                  multi_step: '🔄 多步骤推理',
+                  trending: '🔥 热搜趋势',
+                }
+                const label = intentLabels[data.data?.intent] || data.data?.intent
+                this.messages[msgIdx].content = `${label}（置信度 ${((data.data?.confidence || 0) * 100).toFixed(0)}%）`
+                flushNow()
+              } else if (data.type === 'action') {
+                if (!this.messages[msgIdx].toolsUsed.includes(data.data?.tool)) {
+                  this.messages[msgIdx].toolsUsed.push(data.data?.tool)
+                }
+                flushNow()
+              } else if (data.type === 'thinking_start') {
+                if (!isStreamingAnswer) {
+                  this.messages[msgIdx].content = '💭 正在分析...'
+                  flushNow()
+                }
+              } else if (data.type === 'thinking_end') {
+                const thought = data.data || ''
+                const thoughtMatch = thought.match(/Thought:\s*(.+?)(?=Action:|Final Answer:|$)/s)
+                if (thoughtMatch) {
+                  this.messages[msgIdx].thoughtProcess.push({
+                    step: data.step,
+                    thought: thoughtMatch[1].trim()
+                  })
+                }
+                flushNow()
+              } else if (data.type === 'answer_start') {
+                isStreamingAnswer = true
+                answerContent = ''
+                this.messages[msgIdx].content = ''
+                flushNow()
+              } else if (data.type === 'answer_token') {
+                // token 更新走 RAF，批量合并到 ~60fps
+                answerContent += data.data
+                this.messages[msgIdx].content = answerContent
+                scheduleFlush()
+              } else if (data.type === 'answer') {
+                this.messages[msgIdx].content = data.data
+                flushNow()
+              } else if (data.type === 'done') {
+                if (data.data?.tools_used) {
+                  this.messages[msgIdx].toolsUsed = [
+                    ...new Set([...this.messages[msgIdx].toolsUsed, ...data.data.tools_used])
+                  ]
+                }
+                this.messages[msgIdx].finished = true
+                this.messageLoading = false
+                flushNow()
+                streamDone = true
+                break
+              } else if (data.type === 'error') {
+                this.messages[msgIdx].content = `❌ 智能路由错误: ${data.data}`
+                this.messages[msgIdx].finished = true
+                this.messages[msgIdx].isError = true
+                this.messageLoading = false
+                flushNow()
+                this.$message.error(`智能路由失败: ${data.data}`)
+                streamDone = true
+                break
+              }
+            } catch (parseErr) {
+              console.error('解析 Smart Stream SSE 数据失败:', line, parseErr)
+            }
           }
-        } else {
-          this.messages[msgIdx].content = data.error || '查询失败'
-          this.messages[msgIdx].isError = true
         }
       } catch (e) {
-        this.messages[msgIdx].content = `请求失败: ${e.message}`
+        this.messages[msgIdx].content = `❌ 错误: ${e.message}`
         this.messages[msgIdx].isError = true
+        flushNow()
+        this.$message.error(`智能路由请求失败: ${e.message}`)
       } finally {
         this.messages[msgIdx].finished = true
+        flushNow()
         this.messageLoading = false
       }
     },
@@ -1217,6 +1322,17 @@ export default {
         finished: false,
         streamingTokens: ''  // 用于累积流式 token
       })
+
+      // RAF 批量刷新，避免每个 token 触发全量重渲染
+      let agentRafId = null
+      const agentFlushNow = () => {
+        if (agentRafId) { cancelAnimationFrame(agentRafId); agentRafId = null }
+        this.$set(this.messages, msgIdx, { ...this.messages[msgIdx] })
+      }
+      const agentScheduleFlush = () => {
+        if (agentRafId) return
+        agentRafId = requestAnimationFrame(() => { agentRafId = null; this.$set(this.messages, msgIdx, { ...this.messages[msgIdx] }) })
+      }
       
       try {
         // 发送请求参数
@@ -1251,10 +1367,11 @@ export default {
         let currentThinkingContent = ''  // 当前思考内容
         let answerContent = ''  // 累积的最终答案
         let isStreamingAnswer = false  // 是否正在流式输出答案
+        let agentStreamDone = false
         
         while (true) {
           const { done, value } = await reader.read()
-          if (done) break
+          if (done || agentStreamDone) break
           
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
@@ -1267,16 +1384,15 @@ export default {
                 
                 if (data.type === 'start') {
                   this.messages[msgIdx].content = '🤔 正在思考...\n'
+                  agentFlushNow()
                 } else if (data.type === 'iteration') {
                   // 新的迭代开始 - 不显示迭代信息
-                  // if (!isStreamingAnswer) {
-                  //   this.messages[msgIdx].content = `🔄 迭代 ${data.data.iteration}/${data.data.max}\n`
-                  // }
                 } else if (data.type === 'thinking_start') {
                   // 开始思考，重置当前思考内容
                   currentThinkingContent = ''
                   if (!isStreamingAnswer) {
                     this.messages[msgIdx].content = '💭 正在分析...'
+                    agentFlushNow()
                   }
                 } else if (data.type === 'thinking_end') {
                   // 思考完成，从 data.data 获取完整的思考内容
@@ -1288,6 +1404,7 @@ export default {
                       thought: thoughtMatch[1].trim()
                     })
                   }
+                  agentFlushNow()
                 } else if (data.type === 'thought') {
                   // 兼容旧格式：添加思考步骤
                   this.messages[msgIdx].thoughtProcess.push({
@@ -1295,6 +1412,7 @@ export default {
                     thought: data.data.thought
                   })
                   this.messages[msgIdx].content = `💭 步骤 ${data.data.step}: ${data.data.thought.substring(0, 100)}...\n`
+                  agentFlushNow()
                 } else if (data.type === 'action') {
                   // 更新当前步骤的工具信息
                   const currentStep = this.messages[msgIdx].thoughtProcess.length - 1
@@ -1304,58 +1422,61 @@ export default {
                   if (!this.messages[msgIdx].toolsUsed.includes(data.data.tool)) {
                     this.messages[msgIdx].toolsUsed.push(data.data.tool)
                   }
-                  // 不再显示"使用工具"的中间状态
-                  // if (!isStreamingAnswer) {
-                  //   this.messages[msgIdx].content = `🔧 使用工具: ${data.data.tool}\n`
-                  // }
+                  agentFlushNow()
                 } else if (data.type === 'observation') {
                   // 更新观察结果
                   const currentStep = this.messages[msgIdx].thoughtProcess.length - 1
                   if (currentStep >= 0) {
-                    // 新格式: data.data 是 {text: '...', data: structured_data}
-                    // 旧格式: data.data 是纯文本字符串
                     if (data.data && typeof data.data === 'object' && 'text' in data.data) {
                       this.messages[msgIdx].thoughtProcess[currentStep].observation = data.data.text
                       this.messages[msgIdx].thoughtProcess[currentStep].observationData = data.data.data
                     } else {
-                      // 向后兼容：如果是纯字符串，则直接使用
                       this.messages[msgIdx].thoughtProcess[currentStep].observation = data.data
                     }
                   }
-                  // 不再显示"获取到工具结果"的中间状态
-                  // if (!isStreamingAnswer) {
-                  //   this.messages[msgIdx].content = `📋 获取到工具结果...\n`
-                  // }
+                  agentFlushNow()
                 } else if (data.type === 'answer_start') {
                   // 开始流式输出答案
                   isStreamingAnswer = true
                   answerContent = ''
                   this.messages[msgIdx].content = ''
+                  agentFlushNow()
                 } else if (data.type === 'answer_token') {
-                  // 流式答案 token
+                  // 流式答案 token —— RAF 批量合并，避免每 token 触发重渲染
                   answerContent += data.data
                   this.messages[msgIdx].content = answerContent
+                  agentScheduleFlush()
                 } else if (data.type === 'reflecting') {
                   if (!isStreamingAnswer) {
                     this.messages[msgIdx].content = `🔍 ${data.data}\n`
+                    agentFlushNow()
                   }
                 } else if (data.type === 'reflection_result') {
                   // 反思结果
                   this.messages[msgIdx].reflection = data.data
+                  agentFlushNow()
                 } else if (data.type === 'answer') {
                   this.messages[msgIdx].content = data.data
+                  agentFlushNow()
                 } else if (data.type === 'meta') {
                   this.messages[msgIdx].toolsUsed = data.data.tools_used || []
+                  agentFlushNow()
                 } else if (data.type === 'done') {
                   this.messages[msgIdx].finished = true
+                  this.messageLoading = false
+                  agentFlushNow()
+                  agentStreamDone = true
+                  break
                 } else if (data.type === 'error') {
                   this.messages[msgIdx].content = `❌ Agent 错误: ${data.data}`
                   this.messages[msgIdx].finished = true
                   this.messages[msgIdx].isError = true
+                  this.messageLoading = false
+                  agentFlushNow()
                   this.$message.error(`Agent 查询失败: ${data.data}`)
+                  agentStreamDone = true
+                  break
                 }
-                
-                this.messages[msgIdx] = { ...this.messages[msgIdx] }
               } catch (parseErr) {
                 console.error('解析 Agent SSE 数据失败:', line, parseErr)
               }
@@ -1366,6 +1487,7 @@ export default {
         this.messages[msgIdx].content = `❌ 错误: ${e.message}`
         this.messages[msgIdx].finished = true
         this.messages[msgIdx].isError = true
+        agentFlushNow()
         this.$message.error(`Agent 查询失败: ${e.message}`)
       } finally {
         this.messageLoading = false
@@ -1422,6 +1544,17 @@ export default {
           sources: [],
           finished: false
         })
+
+        // RAF 批量刷新
+        let ragRafId = null
+        const ragFlushNow = () => {
+          if (ragRafId) { cancelAnimationFrame(ragRafId); ragRafId = null }
+          this.$set(this.messages, msgIdx, { ...this.messages[msgIdx] })
+        }
+        const ragScheduleFlush = () => {
+          if (ragRafId) return
+          ragRafId = requestAnimationFrame(() => { ragRafId = null; this.$set(this.messages, msgIdx, { ...this.messages[msgIdx] }) })
+        }
         
         // 使用流式响应
         const response = await fetch(`${API_BASE}/query-stream`, {
@@ -1436,10 +1569,11 @@ export default {
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+        let ragStreamDone = false
         
         while (true) {
           const { done, value } = await reader.read()
-          if (done) break
+          if (done || ragStreamDone) break
           
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
@@ -1501,17 +1635,24 @@ export default {
                   }
                 } else if (data.type === 'done') {
                   this.messages[msgIdx].finished = true
+                  this.messageLoading = false
+                  ragStreamDone = true
                 } else if (data.type === 'error') {
                   // 错误消息以红色显示，并标记为已完成
                   this.messages[msgIdx].content = `❌ 错误: ${data.data}`
                   this.messages[msgIdx].finished = true
                   this.messages[msgIdx].isError = true
+                  this.messageLoading = false
                   this.$message.error(`查询失败: ${data.data}`)
+                  ragStreamDone = true
                 }
                 
                 // 只在接收到重要数据时触发更新
-                if (['content', 'sources', 'done', 'error'].includes(data.type)) {
-                  this.messages[msgIdx] = { ...this.messages[msgIdx] }
+                // content 走 RAF 批量刷新，其他结构性事件立即刷新
+                if (data.type === 'content') {
+                  ragScheduleFlush()
+                } else if (['sources', 'conversation_id', 'done', 'error'].includes(data.type)) {
+                  ragFlushNow()
                 }
               } catch (parseErr) {
                 console.error('解析 SSE 数据失败:', line, parseErr)

@@ -290,18 +290,45 @@ class RAGAgent(BaseAgent):
             if analysis.intent == IntentType.KNOWLEDGE_BASE and analysis.confidence >= 0.8:
                 rag_tool = self.tools.get("rag_search")
                 if rag_tool:
-                    result = rag_tool.execute(query=question, generate_answer=True, top_k=3)
-                    if result.success and result.output:
+                    # 只检索文档，不触发 RAGAssistant 内部的 LLM
+                    result = rag_tool.execute(query=question, generate_answer=False, top_k=5)
+                    if result.success and result.data:
+                        # 拼出上下文，用 Agent 自己的 LLM 生成答案
+                        docs = result.data
+                        context_parts = []
+                        for i, d in enumerate(docs[:5], 1):
+                            if hasattr(d, 'page_content'):
+                                context_parts.append(f"[{i}] {d.page_content}")
+                            elif isinstance(d, dict):
+                                context_parts.append(f"[{i}] {d.get('content', str(d))}")
+                        context = "\n\n".join(context_parts)
+                        rag_prompt = (
+                            f"请严格根据以下上下文回答问题，不要使用上下文以外的知识。\n\n"
+                            f"【上下文】\n{context}\n\n"
+                            f"【问题】\n{question}\n\n"
+                            f"如果上下文中没有足够信息，请如实说明。"
+                        )
+                        llm_resp = self.llm.invoke(rag_prompt)
+                        answer = llm_resp.content if hasattr(llm_resp, 'content') else str(llm_resp)
+                        # 附上来源
+                        sources = []
+                        for d in docs[:5]:
+                            if hasattr(d, 'metadata'):
+                                sources.append(d.metadata.get('source', '未知'))
+                            elif isinstance(d, dict):
+                                sources.append(d.get('source', '未知'))
+                        if sources:
+                            answer += "\n\n**参考来源**: " + "、".join(dict.fromkeys(sources))
                         response = AgentResponse(
                             success=True,
-                            answer=result.output,
+                            answer=answer,
                             thought_process=[],
                             tools_used=["rag_search"],
                             iterations=1,
                         )
                         if save_to_history and self._current_conversation_id:
                             self._conversation_manager.add_message(
-                                self._current_conversation_id, "assistant", result.output
+                                self._current_conversation_id, "assistant", answer
                             )
                         return response
         
@@ -316,7 +343,163 @@ class RAGAgent(BaseAgent):
             )
         
         return response
-    
+
+    def smart_query_stream(self, question: str, save_to_history: bool = True):
+        """流式智能查询 - 意图路由 + 流式输出答案 token
+
+        与 smart_query 相同的意图路由逻辑，但对 LLM 回答使用流式输出。
+
+        Args:
+            question: 用户问题
+            save_to_history: 是否保存到对话历史
+
+        Yields:
+            StreamEvent 事件
+        """
+        import pytz
+        from datetime import datetime
+        from src.agent.base import StreamEvent
+
+        # 保存用户消息到历史
+        if save_to_history and self._current_conversation_id:
+            self._conversation_manager.add_message(
+                self._current_conversation_id, "user", question
+            )
+
+        # 获取对话历史
+        chat_history = ""
+        if self._current_conversation_id:
+            chat_history = self._conversation_manager.format_history_for_llm(
+                self._current_conversation_id, max_turns=5
+            )
+
+        # 获取当前时间
+        tz = pytz.timezone('Asia/Shanghai')
+        current_date = datetime.now(tz).strftime("%Y年%m月%d日 %H:%M:%S")
+
+        yield StreamEvent(type='start', data='正在分析问题意图...')
+
+        if self._intent_router:
+            analysis = self._intent_router.analyze_intent(
+                question=question,
+                chat_history=chat_history,
+                current_date=current_date
+            )
+            logger.info(f"[SmartStream] 意图: {analysis.intent.value}, 置信度: {analysis.confidence}")
+
+            yield StreamEvent(type='intent', data={
+                'intent': analysis.intent.value,
+                'confidence': analysis.confidence,
+                'reasoning': analysis.reasoning,
+            })
+
+            # 直接回答（常识/计算/代码等）
+            if analysis.intent == IntentType.DIRECT_ANSWER:
+                prompt = (
+                    f"请回答以下问题。这是一个可以直接回答的问题（常识/计算/代码等）。\n\n"
+                    f"【问题】\n{question}\n\n请给出准确、简洁的答案。"
+                )
+                yield StreamEvent(type='answer_start')
+                full_answer = ""
+                for chunk in self.llm_streaming.stream(prompt):
+                    token = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                    if token:
+                        full_answer += token
+                        yield StreamEvent(type='answer_token', data=token)
+                yield StreamEvent(type='answer', data=full_answer)
+                yield StreamEvent(type='done', data={'tools_used': [], 'iterations': 1})
+                if save_to_history and self._current_conversation_id and full_answer:
+                    self._conversation_manager.add_message(
+                        self._current_conversation_id, "assistant", full_answer
+                    )
+                return
+
+            # 历史对话意图
+            if analysis.intent == IntentType.CONVERSATION:
+                prompt = (
+                    f"请基于以下历史对话，回答用户的问题。\n\n"
+                    f"【历史对话】\n{chat_history}\n\n"
+                    f"【用户问题】\n{question}\n\n"
+                    f"请直接给出答案，如果历史对话中没有相关信息，请诚实说明。"
+                )
+                yield StreamEvent(type='answer_start')
+                full_answer = ""
+                for chunk in self.llm_streaming.stream(prompt):
+                    token = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                    if token:
+                        full_answer += token
+                        yield StreamEvent(type='answer_token', data=token)
+                final = full_answer + "\n\n来源: 对话历史"
+                yield StreamEvent(type='answer', data=final)
+                yield StreamEvent(type='done', data={'tools_used': [], 'iterations': 1})
+                if save_to_history and self._current_conversation_id and full_answer:
+                    self._conversation_manager.add_message(
+                        self._current_conversation_id, "assistant", final
+                    )
+                return
+
+            # 知识库查询
+            if analysis.intent == IntentType.KNOWLEDGE_BASE and analysis.confidence >= 0.8:
+                rag_tool = self.tools.get("rag_search")
+                if rag_tool:
+                    yield StreamEvent(type='action', data={'tool': 'rag_search', 'input': question})
+                    # 只检索文档，不触发 RAGAssistant 内部的 LLM
+                    result = rag_tool.execute(query=question, generate_answer=False, top_k=5)
+                    if result.success and result.data:
+                        yield StreamEvent(type='observation', data={'text': '已检索到相关内容', 'data': None})
+                        docs = result.data
+                        context_parts = []
+                        for i, d in enumerate(docs[:5], 1):
+                            if hasattr(d, 'page_content'):
+                                context_parts.append(f'[{i}] {d.page_content}')
+                            elif isinstance(d, dict):
+                                context_parts.append(f'[{i}] {d.get("content", str(d))}')
+                        context = '\n\n'.join(context_parts)
+                        rag_prompt = (
+                            f'请严格根据以下上下文回答问题，不要使用上下文以外的知识。\n\n'
+                            f'【上下文】\n{context}\n\n'
+                            f'【问题】\n{question}\n\n'
+                            f'如果上下文中没有足够信息，请如实说明。'
+                        )
+                        # 用 Agent 自身的流式 LLM 生成答案
+                        sources = []
+                        for d in docs[:5]:
+                            if hasattr(d, 'metadata'):
+                                sources.append(d.metadata.get('source', '未知'))
+                            elif isinstance(d, dict):
+                                sources.append(d.get('source', '未知'))
+                        yield StreamEvent(type='answer_start')
+                        full_answer = ''
+                        for chunk in self.llm_streaming.stream(rag_prompt):
+                            token = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                            if token:
+                                full_answer += token
+                                yield StreamEvent(type='answer_token', data=token)
+                        if sources:
+                            suffix = '\n\n**参考来源**: ' + '、'.join(dict.fromkeys(sources))
+                            full_answer += suffix
+                            yield StreamEvent(type='answer_token', data=suffix)
+                        yield StreamEvent(type='answer', data=full_answer)
+                        yield StreamEvent(type='done', data={'tools_used': ['rag_search'], 'iterations': 1})
+                        if save_to_history and self._current_conversation_id:
+                            self._conversation_manager.add_message(
+                                self._current_conversation_id, 'assistant', full_answer
+                            )
+                        return
+
+        # 复杂问题：使用完整流式 Agent 推理
+        logger.info(f"[SmartStream] 使用完整Agent流式推理")
+        final_answer = ""
+        for event in self.run_stream(question, chat_history):
+            if event.type == 'answer':
+                final_answer = event.data
+            yield event
+
+        if save_to_history and self._current_conversation_id and final_answer:
+            self._conversation_manager.add_message(
+                self._current_conversation_id, "assistant", final_answer
+            )
+
     def _handle_conversation_intent(
         self, 
         question: str, 
