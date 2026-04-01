@@ -1,7 +1,8 @@
 """Pydantic 数据模型"""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Any
 from datetime import datetime
+import re
 
 
 class ConversationMessage(BaseModel):
@@ -29,6 +30,16 @@ class QueryRequest(BaseModel):
     conversation_id: Optional[str] = Field(default=None, description="会话ID，用于维护连续对话")
     history: Optional[List[ConversationMessage]] = Field(default=None, description="历史对话消息列表")
 
+    @field_validator('conversation_id')
+    @classmethod
+    def validate_conversation_id(cls, v):
+        if v is not None:
+            # 只允许 UUID 格式
+            uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+            if not uuid_pattern.match(v):
+                raise ValueError('conversation_id 必须是有效的 UUID 格式')
+        return v
+
 
 class QueryResponse(BaseModel):
     """查询响应模型"""
@@ -40,6 +51,14 @@ class QueryResponse(BaseModel):
 class BuildRequest(BaseModel):
     """构建知识库请求模型"""
     documents_path: str
+
+    @field_validator('documents_path')
+    @classmethod
+    def validate_documents_path(cls, v):
+        # 禁止路径遍历
+        if '..' in v:
+            raise ValueError('路径不能包含 ..')
+        return v
 
 
 class BuildResponse(BaseModel):

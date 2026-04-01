@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
 from src.api.agent_routes import router as agent_router
@@ -58,17 +59,29 @@ def create_app() -> FastAPI:
     )
     
     # 配置 CORS 中间件
+    # 从环境变量读取允许的来源，默认仅允许本地开发
+    allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:80").split(",")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[origin.strip() for origin in allowed_origins],
         allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Content-Type", "Authorization"],
     )
     
     # 注册路由
     app.include_router(router, prefix="/api")
     app.include_router(agent_router, prefix="/api")  # Agent 路由
+
+    # 静态文件服务 - 生成的图片
+    generated_images_dir = Path("output/generated_images")
+    generated_images_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/api/generated-images", StaticFiles(directory=str(generated_images_dir)), name="generated_images")
+
+    # 静态文件服务 - 生成的视频
+    generated_videos_dir = Path("output/generated_videos")
+    generated_videos_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/api/generated-videos", StaticFiles(directory=str(generated_videos_dir)), name="generated_videos")
     
     @app.get("/")
     async def root():

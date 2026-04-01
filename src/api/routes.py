@@ -11,6 +11,7 @@ import logging
 import uuid
 from pathlib import Path
 from typing import Optional
+from pydantic import BaseModel
 
 from src.config.settings import Config
 from src.core.document_processor import DocumentProcessor
@@ -148,6 +149,12 @@ def status():
 def build(req: BuildRequest):
     """构建知识库"""
     try:
+        # 安全: 验证文档路径在允许范围内
+        doc_path = Path(req.documents_path).resolve()
+        allowed_roots = [Path("./documents").resolve(), Path("./uploads").resolve()]
+        if not any(doc_path == root or doc_path.is_relative_to(root) for root in allowed_roots):
+            raise HTTPException(status_code=400, detail="文档路径不在允许范围内，只允许 ./documents 或 ./uploads")
+        
         processor = DocumentProcessor()
         chunks = processor.process_documents(req.documents_path)
         if not chunks:
@@ -221,21 +228,45 @@ def build_knowledge_base_background(documents_path: str):
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     """上传文件到文档目录"""
+    MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
+    ALLOWED_EXTENSIONS = {".md", ".pdf", ".docx", ".doc", ".txt", ".csv", ".json", ".html", ".htm", ".epub", ".rtf", ".pptx", ".xlsx"}
+    
     try:
+        # 安全: 防止路径遍历攻击，只保留文件名部分
+        safe_filename = Path(file.filename).name
+        if not safe_filename or safe_filename.startswith('.'):
+            raise HTTPException(status_code=400, detail="无效的文件名")
+        
+        # 检查文件扩展名
+        file_ext = Path(safe_filename).suffix.lower()
+        if file_ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"不支持的文件类型: {file_ext}")
+        
         documents_dir = Path("./documents")
         documents_dir.mkdir(exist_ok=True)
         
-        file_path = documents_dir / file.filename
         contents = await file.read()
+        
+        # 文件大小限制
+        if len(contents) > MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail=f"文件大小超过限制 ({MAX_UPLOAD_SIZE // 1024 // 1024}MB)")
+        
+        file_path = documents_dir / safe_filename
+        # 安全: 确认解析后路径仍在 documents 目录内
+        if not file_path.resolve().is_relative_to(documents_dir.resolve()):
+            raise HTTPException(status_code=400, detail="无效的文件路径")
+        
         with open(file_path, "wb") as f:
             f.write(contents)
         
         return {
             "success": True,
-            "filename": file.filename,
+            "filename": safe_filename,
             "size": len(contents),
             "path": str(file_path)
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -352,6 +383,126 @@ async def delete_conversation(conversation_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== 文件管理 API ====================
+
+DOCUMENTS_DIR = Path("./documents").resolve()
+
+
+def _safe_file_path(filename: str) -> Path:
+    """验证文件名安全性，返回安全的文件路径"""
+    safe_name = Path(filename).name
+    if not safe_name or safe_name.startswith('.') or '..' in filename:
+        raise HTTPException(status_code=400, detail="无效的文件名")
+    file_path = (DOCUMENTS_DIR / safe_name).resolve()
+    if not file_path.is_relative_to(DOCUMENTS_DIR):
+        raise HTTPException(status_code=400, detail="无效的文件路径")
+    return file_path
+
+
+@router.get("/files")
+async def list_files():
+    """列出文档目录下所有文件"""
+    try:
+        DOCUMENTS_DIR.mkdir(exist_ok=True)
+        files = []
+        for item in sorted(DOCUMENTS_DIR.iterdir()):
+            if item.is_file() and not item.name.startswith('.'):
+                stat = item.stat()
+                files.append({
+                    "name": item.name,
+                    "size": stat.st_size,
+                    "modified": stat.st_mtime,
+                    "ext": item.suffix.lower(),
+                })
+        return {"success": True, "files": files}
+    except Exception as e:
+        logger.error(f"列出文件失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/files/{filename:path}")
+async def read_file_content(filename: str):
+    """读取指定文件内容"""
+    file_path = _safe_file_path(filename)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    # 只允许读取文本类文件
+    text_exts = {'.md', '.txt', '.json', '.csv', '.html', '.htm', '.xml',
+                 '.yaml', '.yml', '.ini', '.cfg', '.conf', '.log',
+                 '.py', '.js', '.ts', '.java', '.cpp', '.c', '.h',
+                 '.go', '.rs', '.rb', '.php', '.sh', '.sql', '.rtf'}
+    if file_path.suffix.lower() not in text_exts:
+        raise HTTPException(status_code=400, detail=f"不支持在线编辑此文件类型: {file_path.suffix}")
+
+    try:
+        content = file_path.read_text(encoding='utf-8')
+        return {"success": True, "name": file_path.name, "content": content, "size": len(content)}
+    except UnicodeDecodeError:
+        try:
+            content = file_path.read_text(encoding='gbk')
+            return {"success": True, "name": file_path.name, "content": content, "size": len(content)}
+        except Exception:
+            raise HTTPException(status_code=400, detail="无法读取此文件，编码不支持")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class FileSaveRequest(BaseModel):
+    content: str
+
+
+@router.put("/files/{filename:path}")
+async def save_file_content(filename: str, req: FileSaveRequest):
+    """保存文件内容"""
+    file_path = _safe_file_path(filename)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    try:
+        file_path.write_text(req.content, encoding='utf-8')
+        return {"success": True, "message": "文件已保存", "size": len(req.content)}
+    except Exception as e:
+        logger.error(f"保存文件失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class FileCreateRequest(BaseModel):
+    name: str
+    content: str = ""
+
+
+@router.post("/files")
+async def create_file_endpoint(req: FileCreateRequest):
+    """创建新文件"""
+    file_path = _safe_file_path(req.name)
+    if file_path.exists():
+        raise HTTPException(status_code=409, detail="文件已存在")
+    try:
+        DOCUMENTS_DIR.mkdir(exist_ok=True)
+        file_path.write_text(req.content, encoding='utf-8')
+        return {"success": True, "message": "文件已创建", "name": file_path.name, "size": len(req.content)}
+    except Exception as e:
+        logger.error(f"创建文件失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/files/{filename:path}")
+async def delete_file(filename: str):
+    """删除指定文件"""
+    file_path = _safe_file_path(filename)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    try:
+        file_path.unlink()
+        return {"success": True, "message": "文件已删除"}
+    except Exception as e:
+        logger.error(f"删除文件失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== 查询 API ====================
+
+
 @router.post("/query-stream")
 async def query_stream(req: QueryRequest):
     """流式查询知识库（SSE）"""
@@ -444,7 +595,6 @@ async def query_stream(req: QueryRequest):
                         "3. 不要在 JSON 前后添加任何额外的字符或解释\n"
                         "4. 确保 JSON 格式完全有效\n"
                         "5. 必须仅基于以下上下文回答，不能使用常识\n"
-                        "5. 必须以提供的上下文为唯一信息源，不要引入外部未提供的信息。\n"
                         "6. 如果用户的问题是一个实体名或关键词，请直接从上下文中提取并用一到两句简短中文陈述该实体的事实。\n"
                         "7. 只有在上下文确实不包含任何与问题相关的事实时，answer 字段才应为：'我无法根据现有知识库中的信息回答这个问题'。\n"
                         f"{conversation_context}"

@@ -28,6 +28,9 @@ class IntentType(Enum):
     FILE_OPERATION = "file_operation"     # 文件操作
     MULTI_STEP = "multi_step"             # 复杂多步骤任务
     TRENDING = "trending"                  # 热搜/趋势查询
+    IMAGE_GENERATION = "image_generation"  # AI 生成图片
+    VIDEO_GENERATION = "video_generation"  # AI 生成视频
+    UTILITY = "utility"                    # 实用工具（时间/计算/翻译/天气等）
 
 
 @dataclass
@@ -82,15 +85,21 @@ class IntentRouter:
 - "file_operation": 用户需要读取、创建、修改、移动文件
 - "multi_step": 复杂任务需要多步骤完成（如"分析文档并生成报告"）
 - "trending": 用户想了解热搜、热门话题、趋势
+- "image_generation": 用户想要生成图片、画画、创建插图、设计海报等图像创作需求
+- "video_generation": 用户想要生成视频、创建动画、制作短片、生成视频片段等视频创作需求
+- "utility": 用户需要使用实用工具：时间查询、日期计算、数学计算、单位换算、进制转换、文本统计、编码解码、正则匹配、JSON处理、翻译、语言检测、系统信息、天气查询等
 
 【判断原则】
 1. 如果问题包含"今天"、"现在"、"最新"、"实时"等时间词汇，且涉及天气、新闻、股价等变化信息 → web_search
 2. 如果问题是关于某个专业概念、技术知识、文档内容 → knowledge_base  
-3. 如果问题是简单的问候、常识、数学计算、代码编写 → direct_answer
+3. 如果问题是简单的问候、常识、代码编写 → direct_answer
 4. 如果问题涉及"刚才"、"之前"、"上一个" → conversation
 5. 如果问题需要创建/读取/修改文件 → file_operation
 6. 如果问题需要多步骤完成（分析+总结+生成等） → multi_step
 7. 如果问题涉及热搜、热点、趋势 → trending
+8. 如果问题要求画画、生成图片、创建插图、设计图像、生成头像等图片创作需求 → image_generation
+9. 如果问题要求生成视频、创建动画、制作短片、视频片段、动态画面等视频创作需求 → video_generation
+10. 如果问题涉及：查看时间/日期、数学计算、单位换算、进制转换、文本字数统计、Base64/MD5编码、正则匹配、JSON格式化、翻译文本、查天气、查系统信息 → utility
 
 【重要提醒】
 - 你只需要分析问题，不需要回答问题
@@ -231,6 +240,8 @@ class IntentRouter:
             "file_operation": IntentType.FILE_OPERATION,
             "multi_step": IntentType.MULTI_STEP,
             "trending": IntentType.TRENDING,
+            "image_generation": IntentType.IMAGE_GENERATION,
+            "video_generation": IntentType.VIDEO_GENERATION,
         }
         intent = intent_map.get(intent_str, IntentType.MULTI_STEP)
         
@@ -270,9 +281,9 @@ class IntentRouter:
             
         elif analysis.intent == IntentType.WEB_SEARCH:
             decision["use_agent"] = True
-            decision["primary_tool"] = "web_search"
+            decision["primary_tool"] = "aggregated_search"
             decision["skip_rag"] = True
-            decision["priority_tools"] = ["web_search", "fetch_webpage"]
+            decision["priority_tools"] = ["aggregated_search", "web_search", "fetch_webpage"]
             
         elif analysis.intent == IntentType.DIRECT_ANSWER:
             decision["use_agent"] = False
@@ -301,6 +312,34 @@ class IntentRouter:
             decision["skip_rag"] = True
             decision["priority_tools"] = ["baidu_trending", "trending_news", "web_search"]
             
+        elif analysis.intent == IntentType.IMAGE_GENERATION:
+            decision["use_agent"] = False
+            decision["primary_tool"] = "image_generation"
+            decision["skip_rag"] = True
+            decision["skip_web"] = True
+            decision["priority_tools"] = ["image_generation"]
+
+        elif analysis.intent == IntentType.VIDEO_GENERATION:
+            decision["use_agent"] = False
+            decision["primary_tool"] = "video_generation"
+            decision["skip_rag"] = True
+            decision["skip_web"] = True
+            decision["priority_tools"] = ["video_generation"]
+
+        elif analysis.intent == IntentType.UTILITY:
+            decision["use_agent"] = True
+            decision["primary_tool"] = "utility"
+            decision["skip_rag"] = True
+            decision["skip_web"] = True
+            decision["priority_tools"] = analysis.suggested_tools or [
+                "current_time", "date_calculator", "world_clock",
+                "calculator", "unit_converter", "base_converter",
+                "word_count", "text_encoding", "regex_match",
+                "json_formatter", "text_diff",
+                "translate", "detect_language",
+                "system_info", "weather",
+            ]
+
         elif analysis.intent == IntentType.MULTI_STEP:
             decision["use_agent"] = True
             decision["priority_tools"] = analysis.suggested_tools

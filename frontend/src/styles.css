@@ -952,8 +952,8 @@ body::before {
 }
 
 .message-images img {
-  max-width: 280px;
-  max-height: 280px;
+  max-width: 400px;
+  max-height: 400px;
   border-radius: var(--radius-md);
   border: 2px solid var(--border-light);
   box-shadow: var(--shadow-lg);
@@ -966,6 +966,23 @@ body::before {
   transform: scale(1.05);
   box-shadow: var(--shadow-xl);
   border-color: var(--primary);
+}
+
+/* Message Videos - AI Generated Videos */
+.message-videos {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.message-video {
+  max-width: 480px;
+  max-height: 360px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border-light);
+  box-shadow: var(--shadow-lg);
+  background: #000;
 }
 
 /* Legacy support for single image */
@@ -2545,6 +2562,12 @@ body::before {
 .dark .message-images img:hover {
   border-color: var(--primary);
   box-shadow: 0 12px 36px rgba(129, 140, 248, 0.4);
+}
+
+/* Dark Message Videos */
+.dark .message-video {
+  border-color: rgba(129, 140, 248, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 /* Dark Files Preview */

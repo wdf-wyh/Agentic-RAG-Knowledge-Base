@@ -20,11 +20,14 @@ from src.agent.tools.file_tools import (
 )
 from src.agent.tools.web_tools import WebSearchTool, FetchWebpageTool
 from src.agent.tools.trending_tools import BaiduTrendingTool, TrendingNewsAggregatorTool
+from src.agent.tools.aggregated_search import AggregatedSearchTool
 from src.agent.tools.analysis_tools import (
     DocumentAnalysisTool,
     SummarizeTool,
     GenerateReportTool,
 )
+from src.agent.tools.image_gen_tools import ImageGenerationTool
+from src.agent.tools.video_gen_tools import VideoGenerationTool
 from src.agent.intent_router import IntentRouter, IntentType, IntentAnalysis
 
 logger = logging.getLogger(__name__)
@@ -139,6 +142,9 @@ class RAGAgent(BaseAgent):
             self.register_tool(web_search)
             self.register_tool(FetchWebpageTool())
             
+            # 聚合搜索引擎（多引擎交叉验证，更精准）
+            self.register_tool(AggregatedSearchTool())
+            
             # 添加热搜工具
             self.register_tool(BaiduTrendingTool())
             self.register_tool(TrendingNewsAggregatorTool())
@@ -147,8 +153,20 @@ class RAGAgent(BaseAgent):
         self.register_tool(DocumentAnalysisTool())
         self.register_tool(SummarizeTool())
         self.register_tool(GenerateReportTool())
+
+        # 7. 图片生成工具
+        try:
+            self.register_tool(ImageGenerationTool())
+        except Exception as e:
+            logger.warning(f"图片生成工具初始化失败: {e}")
+
+        # 7.5 视频生成工具
+        try:
+            self.register_tool(VideoGenerationTool())
+        except Exception as e:
+            logger.warning(f"视频生成工具初始化失败: {e}")
         
-        # 7. 新增企业级工具
+        # 8. 新增企业级工具
         try:
             from src.agent.tools.memory_tools import MemoryTool
             self.register_tool(MemoryTool())
@@ -167,7 +185,34 @@ class RAGAgent(BaseAgent):
             self.register_tool(DataAnalysisTool())
         except ImportError:
             pass
+        # 8. 日期时间工具
+        self.register_tool(CurrentTimeTool())
+        self.register_tool(DateCalculatorTool())
+        self.register_tool(WorldClockTool())
 
+        # 9. 计算器 & 单位换算工具
+        self.register_tool(CalculatorTool())
+        self.register_tool(UnitConverterTool())
+        self.register_tool(BaseConverterTool())
+
+        # 10. 文本处理工具
+        self.register_tool(WordCountTool())
+        self.register_tool(TextEncodingTool())
+        self.register_tool(RegexTool())
+        self.register_tool(JsonFormatterTool())
+        self.register_tool(TextDiffTool())
+
+        # 11. 翻译工具
+        self.register_tool(TranslateTool())
+        self.register_tool(LanguageDetectTool())
+
+        # 12. 系统信息工具
+        self.register_tool(SystemInfoTool())
+        self.register_tool(ProcessListTool())
+        self.register_tool(NetworkInfoTool())
+
+        # 13. 天气工具
+        self.register_tool(WeatherTool())
         if self.config.verbose:
             print(f"\n✓ RAG Agent 初始化完成，共注册 {len(self.tools)} 个工具")
 
@@ -286,6 +331,93 @@ class RAGAgent(BaseAgent):
                     )
                 return response
             
+            # 处理图片生成
+            if analysis.intent == IntentType.IMAGE_GENERATION:
+                image_tool = self.tools.get("image_generation")
+                if image_tool:
+                    # 用 LLM 优化用户描述为英文 prompt
+                    optimize_prompt = (
+                        f"用户想要生成一张图片，请根据以下描述生成一个详细的英文图片 prompt。"
+                        f"只输出 prompt 文本，不要加任何前缀或解释。\n\n"
+                        f"用户描述: {question}"
+                    )
+                    try:
+                        resp = self.llm.invoke(optimize_prompt)
+                        eng_prompt = resp.content if hasattr(resp, 'content') else str(resp)
+                        eng_prompt = eng_prompt.strip().strip('"').strip("'")
+                    except Exception:
+                        eng_prompt = question
+                    
+                    result = image_tool.execute(prompt=eng_prompt)
+                    if result.success and result.data:
+                        revised = result.data.get("revised_prompt", eng_prompt)
+                        answer = f"🎨 图片已生成完成！\n\n**使用的 Prompt**: {revised}"
+                        response = AgentResponse(
+                            success=True,
+                            answer=answer,
+                            thought_process=[],
+                            tools_used=["image_generation"],
+                            iterations=1,
+                        )
+                        response.image_data = result.data
+                        if save_to_history and self._current_conversation_id:
+                            self._conversation_manager.add_message(
+                                self._current_conversation_id, "assistant", answer
+                            )
+                        return response
+                    else:
+                        return AgentResponse(
+                            success=False,
+                            answer=f"图片生成失败: {result.error}",
+                            thought_process=[],
+                            tools_used=["image_generation"],
+                            iterations=1,
+                        )
+
+            # 处理视频生成
+            if analysis.intent == IntentType.VIDEO_GENERATION:
+                video_tool = self.tools.get("video_generation")
+                if video_tool:
+                    # 用 LLM 优化用户描述为英文 prompt
+                    optimize_prompt = (
+                        f"用户想要生成一段视频，请根据以下描述生成一个详细的英文视频 prompt。"
+                        f"描述应包含场景、动作、光线、镜头运动等细节。"
+                        f"只输出 prompt 文本，不要加任何前缀或解释。\n\n"
+                        f"用户描述: {question}"
+                    )
+                    try:
+                        resp = self.llm.invoke(optimize_prompt)
+                        eng_prompt = resp.content if hasattr(resp, 'content') else str(resp)
+                        eng_prompt = eng_prompt.strip().strip('"').strip("'")
+                    except Exception:
+                        eng_prompt = question
+
+                    result = video_tool.execute(prompt=eng_prompt)
+                    if result.success and result.data:
+                        revised = result.data.get("revised_prompt", eng_prompt)
+                        answer = f"🎬 视频已生成完成！\n\n**使用的 Prompt**: {revised}"
+                        response = AgentResponse(
+                            success=True,
+                            answer=answer,
+                            thought_process=[],
+                            tools_used=["video_generation"],
+                            iterations=1,
+                        )
+                        response.video_data = result.data
+                        if save_to_history and self._current_conversation_id:
+                            self._conversation_manager.add_message(
+                                self._current_conversation_id, "assistant", answer
+                            )
+                        return response
+                    else:
+                        return AgentResponse(
+                            success=False,
+                            answer=f"视频生成失败: {result.error}",
+                            thought_process=[],
+                            tools_used=["video_generation"],
+                            iterations=1,
+                        )
+
             # 处理知识库查询（简单RAG）
             if analysis.intent == IntentType.KNOWLEDGE_BASE and analysis.confidence >= 0.8:
                 rag_tool = self.tools.get("rag_search")
@@ -437,6 +569,106 @@ class RAGAgent(BaseAgent):
                         self._current_conversation_id, "assistant", final
                     )
                 return
+
+            # 图片生成
+            if analysis.intent == IntentType.IMAGE_GENERATION:
+                image_tool = self.tools.get("image_generation")
+                if image_tool:
+                    yield StreamEvent(type='action', data={'tool': 'image_generation', 'input': question})
+                    # 用 LLM 优化用户描述为英文 prompt
+                    optimize_prompt = (
+                        f"用户想要生成一张图片，请根据以下描述生成一个详细的英文图片 prompt。"
+                        f"只输出 prompt 文本，不要加任何前缀或解释。\n\n"
+                        f"用户描述: {question}"
+                    )
+                    try:
+                        resp = self.llm.invoke(optimize_prompt)
+                        eng_prompt = resp.content if hasattr(resp, 'content') else str(resp)
+                        eng_prompt = eng_prompt.strip().strip('"').strip("'")
+                    except Exception:
+                        eng_prompt = question
+                    
+                    yield StreamEvent(type='answer_start')
+                    yield StreamEvent(type='answer_token', data='🎨 正在生成图片，请稍候...\n\n')
+                    
+                    result = image_tool.execute(prompt=eng_prompt)
+
+                    if result.success and result.data:
+                        image_url = result.data.get("image_url", "")
+                        revised = result.data.get("revised_prompt", eng_prompt)
+                        answer_text = f"图片已生成完成！\n\n**使用的 Prompt**: {revised}"
+                        yield StreamEvent(type='answer_token', data=answer_text)
+                        # 发送图片事件
+                        yield StreamEvent(type='image', data={
+                            'url': image_url,
+                            'prompt': revised,
+                            'filepath': result.data.get("filepath", ""),
+                        })
+                        full_answer = f"🎨 {answer_text}"
+                        yield StreamEvent(type='answer', data=full_answer)
+                        yield StreamEvent(type='done', data={'tools_used': ['image_generation'], 'iterations': 1})
+                        if save_to_history and self._current_conversation_id:
+                            self._conversation_manager.add_message(
+                                self._current_conversation_id, "assistant", full_answer
+                            )
+                        return
+                    else:
+                        error_msg = f"图片生成失败: {result.error}"
+                        yield StreamEvent(type='answer_token', data=error_msg)
+                        yield StreamEvent(type='answer', data=error_msg)
+                        yield StreamEvent(type='done', data={'tools_used': ['image_generation'], 'iterations': 1})
+                        return
+
+            # 视频生成
+            if analysis.intent == IntentType.VIDEO_GENERATION:
+                video_tool = self.tools.get("video_generation")
+                if video_tool:
+                    yield StreamEvent(type='action', data={'tool': 'video_generation', 'input': question})
+                    # 用 LLM 优化用户描述为英文 prompt
+                    optimize_prompt = (
+                        f"用户想要生成一段视频，请根据以下描述生成一个详细的英文视频 prompt。"
+                        f"描述应包含场景、动作、光线、镜头运动等细节。"
+                        f"只输出 prompt 文本，不要加任何前缀或解释。\n\n"
+                        f"用户描述: {question}"
+                    )
+                    try:
+                        resp = self.llm.invoke(optimize_prompt)
+                        eng_prompt = resp.content if hasattr(resp, 'content') else str(resp)
+                        eng_prompt = eng_prompt.strip().strip('"').strip("'")
+                    except Exception:
+                        eng_prompt = question
+
+                    yield StreamEvent(type='answer_start')
+                    yield StreamEvent(type='answer_token', data='🎬 正在生成视频，请稍候...\n\n')
+
+                    result = video_tool.execute(prompt=eng_prompt)
+
+                    if result.success and result.data:
+                        video_url = result.data.get("video_url", "")
+                        revised = result.data.get("revised_prompt", eng_prompt)
+                        answer_text = f"视频已生成完成！\n\n**使用的 Prompt**: {revised}"
+                        yield StreamEvent(type='answer_token', data=answer_text)
+                        # 发送视频事件
+                        yield StreamEvent(type='video', data={
+                            'url': video_url,
+                            'prompt': revised,
+                            'filepath': result.data.get("filepath", ""),
+                            'duration': result.data.get("duration", ""),
+                        })
+                        full_answer = f"🎬 {answer_text}"
+                        yield StreamEvent(type='answer', data=full_answer)
+                        yield StreamEvent(type='done', data={'tools_used': ['video_generation'], 'iterations': 1})
+                        if save_to_history and self._current_conversation_id:
+                            self._conversation_manager.add_message(
+                                self._current_conversation_id, "assistant", full_answer
+                            )
+                        return
+                    else:
+                        error_msg = f"视频生成失败: {result.error}"
+                        yield StreamEvent(type='answer_token', data=error_msg)
+                        yield StreamEvent(type='answer', data=error_msg)
+                        yield StreamEvent(type='done', data={'tools_used': ['video_generation'], 'iterations': 1})
+                        return
 
             # 知识库查询
             if analysis.intent == IntentType.KNOWLEDGE_BASE and analysis.confidence >= 0.8:

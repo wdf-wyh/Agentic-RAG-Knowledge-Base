@@ -89,6 +89,20 @@
       <!-- 知识库抽屉（包含上传与构建） -->
       <el-drawer v-model="kbVisible" title="📚 知识库管理" size="35%">
         <div class="sidebar-content">
+          <!-- Tab切换：上传 / 文件管理 -->
+          <div class="kb-tabs">
+            <div 
+              :class="['kb-tab', { active: kbTab === 'upload' }]" 
+              @click="kbTab = 'upload'"
+            >📤 上传构建</div>
+            <div 
+              :class="['kb-tab', { active: kbTab === 'files' }]"
+              @click="switchToFilesTab"
+            >📁 文件管理</div>
+          </div>
+
+          <!-- 上传构建 Tab -->
+          <div v-show="kbTab === 'upload'">
           <div class="sidebar-section">
             <h3 class="section-title">📤 上传文档</h3>
             <div class="upload-area">
@@ -149,6 +163,76 @@
               {{ buildResult.message }}
             </div>
           </div>
+          </div>
+
+          <!-- 文件管理 Tab -->
+          <div v-show="kbTab === 'files'">
+            <div class="sidebar-section">
+              <div class="files-toolbar">
+                <el-button size="small" type="primary" @click="showCreateFile">➕ 新建文件</el-button>
+                <el-button size="small" @click="loadFileList">🔄 刷新</el-button>
+              </div>
+
+              <!-- 新建文件 -->
+              <div v-if="newFileVisible" class="new-file-form">
+                <el-input v-model="newFileName" placeholder="文件名（如 notes.md）" size="small" class="mb-2" />
+                <div style="display:flex;gap:8px;">
+                  <el-button size="small" type="primary" @click="createNewFile">创建</el-button>
+                  <el-button size="small" @click="newFileVisible = false">取消</el-button>
+                </div>
+              </div>
+
+              <!-- 文件列表 -->
+              <div v-if="fileListLoading" class="files-loading">加载中...</div>
+              <div v-else-if="fileList.length === 0" class="files-empty">
+                <p>📂 文档目录为空</p>
+                <p style="font-size:12px;color:#999;">上传或新建文件开始使用</p>
+              </div>
+              <div v-else class="file-manager-list">
+                <div 
+                  v-for="f in fileList" 
+                  :key="f.name"
+                  :class="['fm-file-item', { active: editingFile && editingFile.name === f.name }]"
+                  @click="openFile(f.name)"
+                >
+                  <span class="fm-file-icon">{{ getFileIcon(f.ext) }}</span>
+                  <div class="fm-file-info">
+                    <span class="fm-file-name">{{ f.name }}</span>
+                    <span class="fm-file-meta">{{ formatFileSize(f.size) }} · {{ formatTime(f.modified * 1000) }}</span>
+                  </div>
+                  <el-button
+                    type="text"
+                    size="small"
+                    @click.stop="confirmDeleteFile(f.name)"
+                    class="fm-delete-btn"
+                    title="删除文件"
+                  >🗑️</el-button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 文件编辑器 -->
+            <div v-if="editingFile" class="sidebar-section file-editor-section">
+              <div class="editor-header">
+                <h3 class="section-title">✏️ {{ editingFile.name }}</h3>
+                <div class="editor-actions">
+                  <el-button size="small" type="primary" @click="saveFile" :loading="fileSaving">💾 保存</el-button>
+                  <el-button size="small" @click="closeEditor">关闭</el-button>
+                </div>
+              </div>
+              <el-input
+                v-model="editingFile.content"
+                type="textarea"
+                :rows="18"
+                class="file-editor-textarea"
+                spellcheck="false"
+              />
+              <div v-if="fileSaveMsg" :class="['file-save-msg', fileSaveMsg.type]">
+                {{ fileSaveMsg.text }}
+              </div>
+            </div>
+          </div>
+
         </div>
       </el-drawer>
 
@@ -198,6 +282,21 @@
                 <!-- 单图片兼容 -->
                 <div v-else-if="msg.image" class="message-images">
                   <img :src="msg.image" :alt="'图片'" />
+                </div>
+
+                <!-- 视频显示 -->
+                <div v-if="msg.videos && msg.videos.length > 0" class="message-videos">
+                  <video 
+                    v-for="(video, vidIdx) in msg.videos" 
+                    :key="vidIdx"
+                    :src="video" 
+                    controls
+                    playsinline
+                    preload="metadata"
+                    class="message-video"
+                  >
+                    您的浏览器不支持视频播放
+                  </video>
                 </div>
                 
                 <!-- 文件显示 -->
@@ -572,7 +671,17 @@ export default {
       uploadedImages: [],
       
       // 附件数据
-      attachedFiles: []
+      attachedFiles: [],
+      
+      // 文件管理
+      kbTab: 'upload',
+      fileList: [],
+      fileListLoading: false,
+      editingFile: null,
+      fileSaving: false,
+      fileSaveMsg: null,
+      newFileVisible: false,
+      newFileName: ''
     }
   },
   computed: {
@@ -851,12 +960,15 @@ export default {
     getFileIcon(type) {
       if (!type) return '📎'
       const t = String(type).toLowerCase()
-      if (t.includes('pdf')) return '📄'
-      if (t.includes('word') || t.includes('doc')) return '📝'
-      if (t.includes('excel') || t.includes('sheet')) return '📊'
-      if (t.includes('text') || t.includes('markdown')) return '📃'
-      if (t.includes('json')) return '📋'
-      if (t.includes('csv')) return '📈'
+      if (t.includes('pdf') || t === '.pdf') return '📄'
+      if (t.includes('word') || t.includes('doc') || t === '.docx') return '📝'
+      if (t.includes('excel') || t.includes('sheet') || t === '.xls' || t === '.xlsx') return '📊'
+      if (t.includes('text') || t.includes('markdown') || t === '.md' || t === '.txt') return '📃'
+      if (t.includes('json') || t === '.json') return '📋'
+      if (t.includes('csv') || t === '.csv') return '📈'
+      if (t === '.py' || t === '.js' || t === '.ts' || t === '.java' || t === '.cpp' || t === '.go') return '💻'
+      if (t === '.html' || t === '.htm' || t === '.xml') return '🌐'
+      if (t === '.yaml' || t === '.yml' || t === '.ini' || t === '.conf') return '⚙️'
       return '📎'
     },
     removeFile(index) {
@@ -1169,6 +1281,7 @@ export default {
         sources: [],
         thoughtProcess: [],
         toolsUsed: [],
+        images: [],
         finished: false,
         streamingTokens: ''
       })
@@ -1234,6 +1347,7 @@ export default {
                   file_operation: '📁 文件操作',
                   multi_step: '🔄 多步骤推理',
                   trending: '🔥 热搜趋势',
+                  image_generation: '🎨 AI 生成图片',
                 }
                 const label = intentLabels[data.data?.intent] || data.data?.intent
                 this.messages[msgIdx].content = `${label}（置信度 ${((data.data?.confidence || 0) * 100).toFixed(0)}%）`
@@ -1270,6 +1384,24 @@ export default {
                 scheduleFlush()
               } else if (data.type === 'answer') {
                 this.messages[msgIdx].content = data.data
+                flushNow()
+              } else if (data.type === 'image') {
+                // AI 生成的图片
+                if (!this.messages[msgIdx].images) {
+                  this.messages[msgIdx].images = []
+                }
+                if (data.data && data.data.url) {
+                  this.messages[msgIdx].images.push(data.data.url)
+                }
+                flushNow()
+              } else if (data.type === 'video') {
+                // AI 生成的视频
+                if (!this.messages[msgIdx].videos) {
+                  this.messages[msgIdx].videos = []
+                }
+                if (data.data && data.data.url) {
+                  this.messages[msgIdx].videos.push(data.data.url)
+                }
                 flushNow()
               } else if (data.type === 'done') {
                 if (data.data?.tools_used) {
@@ -1319,6 +1451,7 @@ export default {
         sources: [],
         thoughtProcess: [],
         toolsUsed: [],
+        images: [],
         finished: false,
         streamingTokens: ''  // 用于累积流式 token
       })
@@ -1457,6 +1590,15 @@ export default {
                   agentFlushNow()
                 } else if (data.type === 'answer') {
                   this.messages[msgIdx].content = data.data
+                  agentFlushNow()
+                } else if (data.type === 'image') {
+                  // AI 生成的图片
+                  if (!this.messages[msgIdx].images) {
+                    this.messages[msgIdx].images = []
+                  }
+                  if (data.data && data.data.url) {
+                    this.messages[msgIdx].images.push(data.data.url)
+                  }
                   agentFlushNow()
                 } else if (data.type === 'meta') {
                   this.messages[msgIdx].toolsUsed = data.data.tools_used || []
@@ -1759,6 +1901,115 @@ export default {
       )
       
       return text
+    },
+    
+    // ========== 文件管理方法 ==========
+    switchToFilesTab() {
+      this.kbTab = 'files'
+      this.loadFileList()
+    },
+    async loadFileList() {
+      this.fileListLoading = true
+      try {
+        const res = await axios.get(`${API_BASE}/files`)
+        if (res.data.success) {
+          this.fileList = res.data.files
+        }
+      } catch (e) {
+        this.$message.error('加载文件列表失败')
+      } finally {
+        this.fileListLoading = false
+      }
+    },
+    async openFile(filename) {
+      try {
+        const res = await axios.get(`${API_BASE}/files/${encodeURIComponent(filename)}`)
+        if (res.data.success) {
+          this.editingFile = {
+            name: res.data.name,
+            content: res.data.content,
+            originalContent: res.data.content
+          }
+          this.fileSaveMsg = null
+        }
+      } catch (e) {
+        const msg = e.response?.data?.detail || e.message
+        this.$message.error(`打开文件失败: ${msg}`)
+      }
+    },
+    async saveFile() {
+      if (!this.editingFile) return
+      this.fileSaving = true
+      this.fileSaveMsg = null
+      try {
+        const res = await axios.put(
+          `${API_BASE}/files/${encodeURIComponent(this.editingFile.name)}`,
+          { content: this.editingFile.content }
+        )
+        if (res.data.success) {
+          this.editingFile.originalContent = this.editingFile.content
+          this.fileSaveMsg = { type: 'success', text: '✅ 已保存' }
+          this.loadFileList()
+          setTimeout(() => { this.fileSaveMsg = null }, 2000)
+        }
+      } catch (e) {
+        const msg = e.response?.data?.detail || e.message
+        this.fileSaveMsg = { type: 'error', text: `❌ 保存失败: ${msg}` }
+      } finally {
+        this.fileSaving = false
+      }
+    },
+    closeEditor() {
+      if (this.editingFile && this.editingFile.content !== this.editingFile.originalContent) {
+        if (!confirm('文件有未保存的修改，确定关闭？')) return
+      }
+      this.editingFile = null
+      this.fileSaveMsg = null
+    },
+    showCreateFile() {
+      this.newFileVisible = true
+      this.newFileName = ''
+    },
+    async createNewFile() {
+      const name = this.newFileName.trim()
+      if (!name) {
+        this.$message.warning('请输入文件名')
+        return
+      }
+      try {
+        const res = await axios.post(`${API_BASE}/files`, { name, content: '' })
+        if (res.data.success) {
+          this.$message.success('文件已创建')
+          this.newFileVisible = false
+          await this.loadFileList()
+          this.openFile(res.data.name)
+        }
+      } catch (e) {
+        const msg = e.response?.data?.detail || e.message
+        this.$message.error(`创建失败: ${msg}`)
+      }
+    },
+    async confirmDeleteFile(filename) {
+      try {
+        await this.$confirm(`确定要删除文件 "${filename}" 吗？此操作不可恢复。`, '删除确认', {
+          confirmButtonText: '删除',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+        const res = await axios.delete(`${API_BASE}/files/${encodeURIComponent(filename)}`)
+        if (res.data.success) {
+          this.$message.success('文件已删除')
+          if (this.editingFile && this.editingFile.name === filename) {
+            this.editingFile = null
+          }
+          this.loadFileList()
+        }
+      } catch (e) {
+        if (e !== 'cancel') {
+          const msg = e.response?.data?.detail || e.message
+          this.$message.error(`删除失败: ${msg}`)
+        }
+      }
     }
   }
 }
@@ -2043,5 +2294,226 @@ export default {
 
 ::v-deep .el-input__wrapper {
   padding: 0px !important;
+}
+
+/* ========== 文件管理样式 ========== */
+.kb-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.kb-tab {
+  flex: 1;
+  padding: 10px 0;
+  text-align: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: rgba(0, 0, 0, 0.02);
+  color: #606266;
+  user-select: none;
+}
+
+.kb-tab.active {
+  background: linear-gradient(135deg, #409eff, #66b1ff);
+  color: #fff;
+  font-weight: 500;
+}
+
+.kb-tab:not(.active):hover {
+  background: rgba(64, 158, 255, 0.08);
+}
+
+.files-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.new-file-form {
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: rgba(64, 158, 255, 0.04);
+  border: 1px solid rgba(64, 158, 255, 0.15);
+}
+
+.new-file-form .mb-2 {
+  margin-bottom: 8px;
+}
+
+.files-loading,
+.files-empty {
+  text-align: center;
+  padding: 30px 16px;
+  color: #909399;
+}
+
+.file-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.fm-file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.fm-file-item:hover {
+  background: rgba(64, 158, 255, 0.06);
+  border-color: rgba(64, 158, 255, 0.12);
+}
+
+.fm-file-item.active {
+  background: rgba(64, 158, 255, 0.1);
+  border-color: rgba(64, 158, 255, 0.25);
+}
+
+.fm-file-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.fm-file-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fm-file-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-file-meta {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 2px;
+}
+
+.fm-delete-btn {
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 4px 6px !important;
+  min-height: auto !important;
+}
+
+.fm-file-item:hover .fm-delete-btn {
+  opacity: 1;
+}
+
+.file-editor-section {
+  margin-top: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  padding-top: 16px;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.editor-header .section-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.file-editor-textarea .el-textarea__inner {
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  resize: vertical !important;
+}
+
+.file-save-msg {
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.file-save-msg.success {
+  color: #67c23a;
+}
+
+.file-save-msg.error {
+  color: #f56c6c;
+}
+
+/* 深色模式文件管理 */
+.dark .kb-tabs {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .kb-tab {
+  background: rgba(255, 255, 255, 0.02);
+  color: #a0aec0;
+}
+
+.dark .kb-tab.active {
+  background: linear-gradient(135deg, #4a7cf7, #6366f1);
+  color: #fff;
+}
+
+.dark .kb-tab:not(.active):hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.dark .new-file-form {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .fm-file-item:hover {
+  background: rgba(64, 158, 255, 0.08);
+  border-color: rgba(64, 158, 255, 0.15);
+}
+
+.dark .fm-file-item.active {
+  background: rgba(64, 158, 255, 0.12);
+  border-color: rgba(64, 158, 255, 0.25);
+}
+
+.dark .fm-file-name {
+  color: #e2e8f0;
+}
+
+.dark .fm-file-meta {
+  color: #718096;
+}
+
+.dark .file-editor-section {
+  border-top-color: rgba(255, 255, 255, 0.04);
+}
+
+.dark .file-editor-textarea .el-textarea__inner {
+  background: rgba(15, 15, 30, 0.8) !important;
+  color: #e8f3ff !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 </style>

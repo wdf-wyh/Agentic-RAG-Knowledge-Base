@@ -224,7 +224,6 @@ async def agent_query(req: AgentQueryRequest):
         elapsed = time.time() - start_time
         logger.error(f"[Agent Query] 执行失败 - 耗时: {elapsed:.2f}秒, 错误: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-        logger.info(f"[Agent Query] 已恢复 MODEL_PROVIDER = {original_provider}")
 
 
 @router.post("/smart-query")
@@ -640,4 +639,51 @@ async def delete_conversation(conversation_id: str):
         return {"success": True, "message": "对话已删除"}
     except Exception as e:
         logger.error(f"[Conversation] 删除会话失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================
+# 图片生成 API
+# ========================
+
+class ImageGenRequest(BaseModel):
+    """图片生成请求"""
+    prompt: str = Field(..., description="图片描述")
+    size: str = Field("1024x1024", description="图片尺寸")
+    style: str = Field("vivid", description="风格: vivid/natural")
+    quality: str = Field("standard", description="质量: standard/hd")
+
+
+@router.post("/generate-image")
+async def generate_image(req: ImageGenRequest):
+    """直接调用图片生成工具"""
+    logger.info(f"[ImageGen API] 请求生成图片, prompt: {req.prompt[:80]}...")
+
+    try:
+        agent = get_or_create_agent()
+        tool = agent.tools.get("image_generation")
+        if not tool:
+            raise HTTPException(status_code=500, detail="图片生成工具未初始化")
+
+        result = await asyncio.to_thread(
+            tool.execute,
+            prompt=req.prompt,
+            size=req.size,
+            style=req.style,
+            quality=req.quality,
+        )
+
+        if result.success:
+            return {
+                "success": True,
+                "image_url": result.data.get("image_url", ""),
+                "filepath": result.data.get("filepath", ""),
+                "revised_prompt": result.data.get("revised_prompt", req.prompt),
+                "model": result.data.get("model", ""),
+            }
+        else:
+            return {"success": False, "error": result.error}
+
+    except Exception as e:
+        logger.error(f"[ImageGen API] 失败: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

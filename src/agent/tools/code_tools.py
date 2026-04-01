@@ -137,6 +137,18 @@ class CodeExecutorTool(BaseTool):
             if dangerous.lower() in code_lower:
                 return f"代码包含不允许的操作: {dangerous}"
         
+        # 额外安全检查: 防止通过字符串拼接/编码绕过
+        bypass_patterns = [
+            r'getattr\s*\(', r'importlib', r'__builtins__',
+            r'compile\s*\(', r'globals\s*\(', r'locals\s*\(',
+            r'chr\s*\(.*\)', r'\\x[0-9a-f]', r'base64',
+            r'codecs', r'pickle', r'marshal',
+        ]
+        import re as _re
+        for pattern in bypass_patterns:
+            if _re.search(pattern, code_lower):
+                return f"代码包含潜在的安全绕过操作"
+        
         # 检查文件操作
         if 'open(' in code and ('w' in code or 'a' in code):
             # 只允许在临时目录写文件
