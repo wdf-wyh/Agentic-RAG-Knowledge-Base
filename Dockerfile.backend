@@ -53,7 +53,11 @@ ENV PYTHONUNBUFFERED=1 \
     API_PORT=8000 \
     API_RELOAD=false \
     VECTOR_DB_PATH=/app/vector_db \
-    LOG_LEVEL=INFO
+    LOG_LEVEL=INFO \
+    HF_ENDPOINT=https://hf-mirror.com
+
+# 预下载嵌入模型（使用镜像源）
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-zh-v1.5')" || echo "模型预下载失败，将在运行时重试"
 
 # 暴露端口
 EXPOSE 8000

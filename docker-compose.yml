@@ -89,8 +89,8 @@ services:
 
 # -------- 持久化卷 --------
 volumes:
-  # ollama_data:    # 启用 Ollama 时取消注释
-    # driver: local
+  ollama_data:
+    driver: local
 
 # -------- 网络 --------
 networks:

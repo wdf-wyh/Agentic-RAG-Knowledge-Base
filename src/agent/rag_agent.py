@@ -28,6 +28,33 @@ from src.agent.tools.analysis_tools import (
 )
 from src.agent.tools.image_gen_tools import ImageGenerationTool
 from src.agent.tools.video_gen_tools import VideoGenerationTool
+from src.agent.tools.datetime_tools import (
+    CurrentTimeTool,
+    DateCalculatorTool,
+    WorldClockTool,
+)
+from src.agent.tools.calculator_tools import (
+    CalculatorTool,
+    UnitConverterTool,
+    BaseConverterTool,
+)
+from src.agent.tools.text_tools import (
+    WordCountTool,
+    TextEncodingTool,
+    RegexTool,
+    JsonFormatterTool,
+    TextDiffTool,
+)
+from src.agent.tools.translation_tools import (
+    TranslateTool,
+    LanguageDetectTool,
+)
+from src.agent.tools.system_tools import (
+    SystemInfoTool,
+    ProcessListTool,
+    NetworkInfoTool,
+)
+from src.agent.tools.weather_tools import WeatherTool
 from src.agent.intent_router import IntentRouter, IntentType, IntentAnalysis
 
 logger = logging.getLogger(__name__)

@@ -1,5 +1,6 @@
 """向量数据库模块"""
 import os
+import logging
 from typing import List, Optional, Any
 
 from typing import Any
@@ -19,6 +20,8 @@ except Exception:
     np = None
 
 from src.config.settings import Config
+
+logger = logging.getLogger(__name__)
 
 
 class VectorStore:
@@ -57,9 +60,32 @@ class VectorStore:
 
             class LocalEmbeddings:
                 """本地 Embeddings 适配器，提供 embed_documents 与 embed_query 方法"""
-                def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5"):
+                def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5", max_retries: int = 5):
                     # 使用支持中文的嵌入模型，提升中文语义检索效果
-                    self.model = SentenceTransformer(model_name)
+                    self.model = None
+                    # 设置 Hugging Face 镜像源（中国区）
+                    import os
+                    if not os.getenv("HF_ENDPOINT"):
+                        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+                    
+                    for attempt in range(max_retries):
+                        try:
+                            logger.info(f"加载嵌入模型：{model_name} (尝试 {attempt + 1}/{max_retries})")
+                            self.model = SentenceTransformer(model_name)
+                            logger.info(f"✓ 嵌入模型加载成功：{model_name}")
+                            break
+                        except Exception as e:
+                            if attempt < max_retries - 1:
+                                wait_time = (attempt + 1) * 2  # 递增等待时间
+                                logger.warning(f"嵌入模型加载失败 (尝试 {attempt + 1}): {e}")
+                                logger.info(f"{wait_time} 秒后重试...")
+                                import time
+                                time.sleep(wait_time)
+                            else:
+                                logger.error(f"嵌入模型加载失败，已尝试 {max_retries} 次：{e}")
+                                raise RuntimeError(
+                                    f"无法加载嵌入模型 {model_name}。请检查网络连接，或考虑使用云端 Embedding API（配置 OPENAI_API_KEY 或 GEMINI_API_KEY）。错误：{e}"
+                                )
 
                 def embed_documents(self, texts):
                     embs = self.model.encode(list(texts), show_progress_bar=False, convert_to_numpy=True)
