@@ -29,7 +29,7 @@ def generate(
         prompt: 输入提示文本（字符串）
         max_tokens: 最大生成 token 数
         temperature: 采样温度
-        api_url: DeepSeek API 根地址，例如 `https://api.deepseek.ai`，若为 None 则使用默认
+        api_url: DeepSeek API 根地址，例如 `https://api.deepseek.com`，若为 None 则使用默认
         api_key: 用于认证的 API key（优先使用此参数，否则应从环境变量读取）
         stream: 是否以流式方式返回
 
@@ -37,7 +37,7 @@ def generate(
         非流：返回生成文本（str）；流：返回一个迭代器（yield 分块字符串）
     """
     if api_url is None:
-        api_url = "https://api.deepseek.ai"
+        api_url = "https://api.deepseek.com"
 
     if not api_key:
         # 不直接导入 env 以保持函数纯粹性，调用方可传入或从配置中读取

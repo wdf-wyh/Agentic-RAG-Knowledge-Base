@@ -43,7 +43,7 @@ class Config:
     OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
     # DeepSeek 配置
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-    DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.ai")
+    DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
     # .strip()：移除字符串开头和结尾的空白字符（空格、制表符、换行符等）。
     # .lower()：将字符串转换为小写字母。  
     _raw_provider = os.getenv("MODEL_PROVIDER", "").strip().lower()

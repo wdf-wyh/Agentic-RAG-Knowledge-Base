@@ -559,7 +559,7 @@
           <div style="display:flex;gap:8px;margin-top:12px;">
             <div style="flex:1;">
               <label class="settings-label">API URL</label>
-              <el-input v-model="deepseekApiUrl" placeholder="例如: https://api.deepseek.ai" clearable />
+              <el-input v-model="deepseekApiUrl" placeholder="例如：https://api.deepseek.com" clearable />
             </div>
             <div style="flex:1;">
               <label class="settings-label">API Key</label>
