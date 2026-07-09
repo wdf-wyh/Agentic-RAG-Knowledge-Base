@@ -511,24 +511,46 @@
     </el-drawer>
 
     <!-- 设置抽屉 -->
-    <el-drawer v-model="settingsVisible" title="模型配置" size="35%">
-      <div class="settings-content">
-        <div class="settings-group">
-          <label class="settings-label">模型提供者</label>
-          <div class="custom-select full-width" :class="{ 'is-open': providerDropdownOpen }" v-click-outside="() => providerDropdownOpen = false">
-            <div class="custom-select__trigger" @click="providerDropdownOpen = !providerDropdownOpen">
-              <span class="custom-select__value">{{ currentProviderLabel }}</span>
-              <span class="custom-select__arrow">▾</span>
+    <el-drawer v-model="settingsVisible" title="模型配置" size="35%" class="settings-drawer">
+      <div class="settings-content settings-panel">
+        <div class="settings-hero">
+          <div>
+            <p class="settings-eyebrow">Model Access</p>
+            <h3 class="settings-heading">统一管理模型连接与调用方式</h3>
+            <p class="settings-summary">选择提供者后，填写对应模型与接入信息。界面会自动保存，便于在不同模式下快速切换。</p>
+          </div>
+          <div class="settings-status-card">
+            <span class="settings-status-label">当前提供者</span>
+            <span class="settings-status-value">{{ currentProviderLabel }}</span>
+          </div>
+        </div>
+
+        <div class="settings-group settings-group--provider">
+          <div class="settings-group-header">
+            <div>
+              <h4 class="settings-group-title">基础配置</h4>
+              <p class="settings-group-desc">先确定模型来源，再展示对应的接入参数。</p>
             </div>
-            <div class="custom-select__dropdown"  v-show="providerDropdownOpen">
-              <div
-                v-for="opt in providerOptions"
-                :key="opt.value"
-                class="custom-select__option"
-                :class="{ 'is-selected': provider === opt.value }"
-                @click="selectProvider(opt.value)"
-              >
-                {{ opt.label }}
+          </div>
+
+          <div class="settings-field">
+            <label class="settings-label">模型提供者</label>
+            <div class="settings-field-hint">支持本地 Ollama、远程 DeepSeek，以及后续扩展的统一入口。</div>
+            <div class="custom-select full-width settings-provider-select" :class="{ 'is-open': providerDropdownOpen }" v-click-outside="() => providerDropdownOpen = false">
+              <div class="custom-select__trigger" @click="providerDropdownOpen = !providerDropdownOpen">
+                <span class="custom-select__value">{{ currentProviderLabel }}</span>
+                <span class="custom-select__arrow">▾</span>
+              </div>
+              <div class="custom-select__dropdown" v-show="providerDropdownOpen">
+                <div
+                  v-for="opt in providerOptions"
+                  :key="opt.value"
+                  class="custom-select__option"
+                  :class="{ 'is-selected': provider === opt.value }"
+                  @click="selectProvider(opt.value)"
+                >
+                  {{ opt.label }}
+                </div>
               </div>
             </div>
           </div>
@@ -536,44 +558,69 @@
 
         <!-- Ollama 配置 -->
         <div v-if="provider === 'ollama'" class="settings-group">
-          <label class="settings-label">Ollama 模型</label>
-          <el-input
-            v-model="ollamaModel"
-            placeholder="例如: gemma3:4b"
-            clearable
-          />
+          <div class="settings-group-header">
+            <div>
+              <h4 class="settings-group-title">Ollama 本地配置</h4>
+              <p class="settings-group-desc">适用于本机或内网部署，强调隐私与可控性。</p>
+            </div>
+          </div>
 
-          <label class="settings-label mt-4">Ollama API URL</label>
-          <el-input
-            v-model="ollamaApiUrl"
-            placeholder="例如: http://localhost:11434"
-            clearable
-          />
+          <div class="settings-field">
+            <label class="settings-label">模型名称</label>
+            <div class="settings-field-hint">填写本地已拉取的模型标识，例如 `gemma3:4b`。</div>
+            <el-input
+              v-model="ollamaModel"
+              placeholder="例如: gemma3:4b"
+              clearable
+            />
+          </div>
+
+          <div class="settings-field">
+            <label class="settings-label">服务地址</label>
+            <div class="settings-field-hint">默认是本机 `11434` 端口，也可以接入局域网中的 Ollama 服务。</div>
+            <el-input
+              v-model="ollamaApiUrl"
+              placeholder="例如: http://localhost:11434"
+              clearable
+            />
+          </div>
         </div>
 
         <!-- DeepSeek 配置 -->
         <div v-if="provider === 'deepseek'" class="settings-group">
-          <label class="settings-label">DeepSeek 模型</label>
-          <el-input v-model="deepseekModel" placeholder="例如: deepseek-v1" clearable />
-
-          <div style="display:flex;gap:8px;margin-top:12px;">
-            <div style="flex:1;">
-              <label class="settings-label">API URL</label>
-              <el-input v-model="deepseekApiUrl" placeholder="例如：https://api.deepseek.com" clearable />
+          <div class="settings-group-header">
+            <div>
+              <h4 class="settings-group-title">DeepSeek 远程配置</h4>
+              <p class="settings-group-desc">适用于云端推理场景，建议明确模型版本、网关地址与密钥。</p>
             </div>
-            <div style="flex:1;">
+          </div>
+
+          <div class="settings-field">
+            <label class="settings-label">模型名称</label>
+            <div class="settings-field-hint">建议填写稳定版本名，方便团队统一配置。</div>
+            <el-input v-model="deepseekModel" placeholder="例如: deepseek-v1" clearable />
+          </div>
+
+          <div class="settings-form-grid">
+            <div class="settings-field">
+              <label class="settings-label">API URL</label>
+              <div class="settings-field-hint">可填写官方地址或企业内部代理网关。</div>
+              <el-input v-model="deepseekApiUrl" placeholder="例如: https://api.deepseek.com" clearable />
+            </div>
+            <div class="settings-field">
               <label class="settings-label">API Key</label>
-              <el-input v-model="deepseekApiKey" placeholder="DeepSeek API Key" show-password clearable />
+              <div class="settings-field-hint">仅保存在当前浏览器本地，不会直接显示明文。</div>
+              <el-input v-model="deepseekApiKey" placeholder="请输入 DeepSeek API Key" show-password clearable />
             </div>
           </div>
         </div>
 
-        <div class="settings-info">
+        <div class="settings-note">
           <el-alert
-            title="提示"
+            title="本地保存说明"
             type="info"
             :closable="false"
-            description="模型配置将实时保存到浏览器本地存储"
+            description="模型配置会实时保存到当前浏览器本地存储，适合个人设备或受控终端环境。"
           />
         </div>
       </div>
@@ -2515,5 +2562,204 @@ export default {
   background: rgba(15, 15, 30, 0.8) !important;
   color: #e8f3ff !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.settings-eyebrow {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.settings-heading {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.settings-summary {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #475569;
+  max-width: 540px;
+}
+
+.settings-status-card {
+  min-width: 148px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(59, 130, 246, 0.12);
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.95), rgba(248, 250, 252, 0.95));
+}
+
+.settings-status-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.settings-status-value {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.settings-group {
+  padding: 22px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.settings-group::before {
+  display: none;
+}
+
+.settings-group-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.settings-group-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.settings-group-desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.settings-field + .settings-field {
+  margin-top: 18px;
+}
+
+.settings-field-hint {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.settings-form-grid .settings-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-form-grid .settings-field + .settings-field {
+  margin-top: 0;
+}
+
+.settings-form-grid .settings-field-hint {
+  min-height: 38px;
+}
+
+.settings-provider-select .custom-select__trigger {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+.settings-provider-select .custom-select__dropdown {
+  border-radius: 12px;
+}
+
+.settings-note {
+  margin-top: 4px;
+}
+
+.dark .settings-hero {
+  border-color: rgba(129, 140, 248, 0.14);
+  background: linear-gradient(180deg, rgba(22, 28, 45, 0.96), rgba(17, 24, 39, 0.96));
+  box-shadow: 0 16px 36px rgba(2, 6, 23, 0.45);
+}
+
+.dark .settings-eyebrow,
+.dark .settings-group-desc,
+.dark .settings-field-hint,
+.dark .settings-status-label {
+  color: #94a3b8;
+}
+
+.dark .settings-heading,
+.dark .settings-group-title,
+.dark .settings-status-value {
+  color: #f8fafc;
+}
+
+.dark .settings-summary {
+  color: #cbd5e1;
+}
+
+.dark .settings-status-card {
+  border-color: rgba(129, 140, 248, 0.18);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.92));
+}
+
+.dark .settings-group {
+  border-color: rgba(129, 140, 248, 0.14);
+  background: rgba(15, 23, 42, 0.88);
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
+}
+
+.dark .settings-provider-select .custom-select__trigger {
+  border-color: rgba(129, 140, 248, 0.22);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+@media (max-width: 900px) {
+  .settings-hero {
+    flex-direction: column;
+  }
+
+  .settings-status-card {
+    width: 100%;
+  }
+
+  .settings-form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
