@@ -4,9 +4,11 @@
     <header class="app-header">
       <div class="header-content">
         <div class="logo-section">
-          <div class="logo-icon floating">✨</div>
+          <div class="logo-icon floating">
+            <img src="/logo.svg" alt="RAG 知识库助手" class="logo-image" />
+          </div>
           <div class="logo-text">
-            <h1 class="gradient-text">Agent 知识库</h1>
+            <h1 class="gradient-text">RAG 知识库助手</h1>
             <p>智能知识检索助手</p>
           </div>
         </div>
@@ -240,21 +242,91 @@
       <main class="chat-area">
         <div class="messages-container">
           <div v-if="messages.length === 0" class="empty-state">
+            <div class="hero-badge">Local-first Agentic Knowledge Base</div>
             <div class="empty-icon floating">🚀</div>
-            <h2>开始探索知识</h2>
-            <p>{{ currentModeDesc }}</p>
-            <div class="empty-hints">
-              <div class="hint-card glass-card hover-lift">
-                <span class="hint-icon">💡</span>
-                <span class="hint-text">上传文档构建知识库</span>
+            <h2>把文档变成可对话的知识系统</h2>
+            <p class="hero-subtitle">{{ heroDescription }}</p>
+
+            <div class="hero-actions">
+              <el-button type="primary" class="hero-primary-btn" @click="kbVisible = true">
+                上传并构建知识库
+              </el-button>
+              <el-button @click="settingsVisible = true">
+                配置模型
+              </el-button>
+            </div>
+
+            <div class="hero-status-grid">
+              <div class="hero-status-card glass-card">
+                <span class="hero-status-label">知识库状态</span>
+                <span :class="['hero-status-value', status.vector_store_loaded ? 'is-ready' : 'is-empty']">
+                  {{ knowledgeBaseStatus }}
+                </span>
               </div>
-              <div class="hint-card glass-card hover-lift">
-                <span class="hint-icon">🔍</span>
-                <span class="hint-text">智能检索精准答案</span>
+              <div class="hero-status-card glass-card">
+                <span class="hero-status-label">当前模式</span>
+                <span class="hero-status-value">{{ currentModeLabel }}</span>
               </div>
-              <div class="hint-card glass-card hover-lift">
-                <span class="hint-icon">🤖</span>
-                <span class="hint-text">AI 助手随时待命</span>
+              <div class="hero-status-card glass-card">
+                <span class="hero-status-label">模型提供者</span>
+                <span class="hero-status-value">{{ currentProviderLabel }}</span>
+              </div>
+            </div>
+
+            <div class="hero-scenarios">
+              <div class="hero-scenario-card glass-card hover-lift">
+                <span class="hero-scenario-icon">📚</span>
+                <div>
+                  <h3>知识库问答</h3>
+                  <p>上传 PDF、Markdown、TXT 后，快速获得有来源的回答。</p>
+                </div>
+              </div>
+              <div class="hero-scenario-card glass-card hover-lift">
+                <span class="hero-scenario-icon">🧠</span>
+                <div>
+                  <h3>智能推理</h3>
+                  <p>让 Agent 自动选择检索、文件操作和联网工具完成复杂任务。</p>
+                </div>
+              </div>
+              <div class="hero-scenario-card glass-card hover-lift">
+                <span class="hero-scenario-icon">🏢</span>
+                <div>
+                  <h3>本地优先部署</h3>
+                  <p>兼容 Ollama、本地知识库和私有化部署场景，适合中文团队内部使用。</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="hero-quickstart glass-card">
+              <div class="hero-section-title">三步开始</div>
+              <div class="hero-steps">
+                <div class="hero-step">
+                  <span class="hero-step-index">1</span>
+                  <span>在“设置”中选择可用模型提供者</span>
+                </div>
+                <div class="hero-step">
+                  <span class="hero-step-index">2</span>
+                  <span>上传文档并点击“开始构建”</span>
+                </div>
+                <div class="hero-step">
+                  <span class="hero-step-index">3</span>
+                  <span>从下面的示例问题开始体验</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="hero-prompts glass-card">
+              <div class="hero-section-title">示例问题</div>
+              <div class="hero-prompt-list">
+                <button
+                  v-for="prompt in starterPrompts"
+                  :key="prompt"
+                  type="button"
+                  class="hero-prompt-chip"
+                  @click="applyStarterPrompt(prompt)"
+                >
+                  {{ prompt }}
+                </button>
               </div>
             </div>
           </div>
@@ -447,6 +519,7 @@
                 </div>
               </div>
               <el-input
+                ref="chatInput"
                 v-model="question"
                 type="textarea"
                 :rows="3"
@@ -630,14 +703,14 @@
 
 <script>
 import axios from 'axios'
-import { Setting, PictureFilled, Loading } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Setting, Loading } from '@element-plus/icons-vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 export default {
   components: {
     Setting,
-    PictureFilled,
     Loading
   },
   directives: {
@@ -728,7 +801,13 @@ export default {
       fileSaving: false,
       fileSaveMsg: null,
       newFileVisible: false,
-      newFileName: ''
+      newFileName: '',
+      starterPrompts: [
+        '请总结这份知识库的核心内容，并给出 3 个关键结论。',
+        '根据已有文档，帮我整理一个面向新成员的 5 分钟入门指南。',
+        '这个项目支持哪些模型提供者？分别适合什么场景？',
+        '如果我要把它部署到团队内部服务器，推荐的最小配置是什么？'
+      ]
     }
   },
   computed: {
@@ -746,6 +825,12 @@ export default {
       const mode = this.modeOptions.find(m => m.value === this.queryMode)
       return mode?.desc || '上传文档并构建知识库后，您可以提出相关问题'
     },
+    heroDescription() {
+      if (this.status.vector_store_loaded) {
+        return `当前已具备可查询知识库，使用${this.currentModeLabel}继续提问，或切换模型提供者获得不同回答风格。`
+      }
+      return '适合中文团队的本地优先 Agentic RAG 工作台，支持文档入库、混合检索、多轮对话与智能模式。'
+    },
     currentModeLabel() {
       const mode = this.modeOptions.find(m => m.value === this.queryMode)
       return mode?.label || '纯 RAG'
@@ -753,6 +838,9 @@ export default {
     currentProviderLabel() {
       const opt = this.providerOptions.find(o => o.value === this.provider)
       return opt?.label || '后端默认'
+    },
+    knowledgeBaseStatus() {
+      return this.status.vector_store_loaded ? '已构建，可直接提问' : '未构建，请先上传文档'
     }
   },
   mounted() {
@@ -764,7 +852,7 @@ export default {
     
     // 如果没有设置 provider，推荐使用 Ollama
     if (!this.provider) {
-      this.$message.warning('提示：建议在设置中选择 Ollama(本地) 或其他可用的模型提供者')
+      ElMessage.warning('提示：建议在设置中选择 Ollama(本地) 或其他可用的模型提供者')
     }
     
     // 支持拖拽上传
@@ -856,12 +944,12 @@ export default {
     toggleTheme() {
       this.isDark = !this.isDark
       this.applyTheme()
-      this.$message.success(this.isDark ? '已切换到深色模式' : '已切换到浅色模式')
+      ElMessage.success(this.isDark ? '已切换到深色模式' : '已切换到浅色模式')
     },
     onModeChange(val) {
       this.saveSettings()
       const mode = this.modeOptions.find(m => m.value === val)
-      this.$message.success(`已切换到${mode?.label || val}模式`)
+      ElMessage.success(`已切换到${mode?.label || val}模式`)
     },
     selectMode(value) {
       this.queryMode = value
@@ -917,6 +1005,15 @@ export default {
     triggerChatFileInput() {
       this.$refs.fileInput2.click()
     },
+    applyStarterPrompt(prompt) {
+      this.question = prompt
+      this.$nextTick(() => {
+        const input = this.$refs.chatInput?.textarea || this.$refs.chatInput?.$el?.querySelector('textarea')
+        if (input && typeof input.focus === 'function') {
+          input.focus()
+        }
+      })
+    },
     async handleFileAttach(e) {
       const files = e.target.files
       if (files && files.length > 0) {
@@ -924,7 +1021,7 @@ export default {
         for (let file of files) {
           // 限制文件大小（10MB）
           if (file.size > 10 * 1024 * 1024) {
-            this.$message.warning(`文件 ${file.name} 超过10MB，已跳过`)
+            ElMessage.warning(`文件 ${file.name} 超过10MB，已跳过`)
             continue
           }
           
@@ -940,11 +1037,11 @@ export default {
             addedCount++
           } catch (err) {
             console.error('文件读取失败:', file.name, err)
-            this.$message.error(`文件 ${file.name} 读取失败`)
+            ElMessage.error(`文件 ${file.name} 读取失败`)
           }
         }
         if (addedCount > 0) {
-          this.$message.success(`已添加 ${addedCount} 个文件`)
+          ElMessage.success(`已添加 ${addedCount} 个文件`)
         }
       }
       // 清空input，允许重复上传同一个文件
@@ -1020,7 +1117,7 @@ export default {
     },
     removeFile(index) {
       this.attachedFiles.splice(index, 1)
-      this.$message.success('文件已移除')
+      ElMessage.success('文件已移除')
     },
     async handleFileSelect(e) {
       const files = e.target.files
@@ -1043,10 +1140,10 @@ export default {
             name: res.data.filename,
             size: res.data.size
           })
-          this.$message.success(`文件 ${file.name} 上传成功`)
+          ElMessage.success(`文件 ${file.name} 上传成功`)
         }
       } catch (e) {
-        this.$message.error(`文件 ${file.name} 上传失败: ${e.message}`)
+        ElMessage.error(`文件 ${file.name} 上传失败: ${e.message}`)
       }
     },
     formatFileSize(bytes) {
@@ -1061,11 +1158,11 @@ export default {
       try {
         const res = await axios.post(`${API_BASE}/build-start`)
         if (res.data.success) {
-          this.$message.success('构建任务已启动')
+          ElMessage.success('构建任务已启动')
           this.startProgressPolling()
         }
       } catch (e) {
-        this.$message.error(`启动构建失败: ${e.message}`)
+        ElMessage.error(`启动构建失败: ${e.message}`)
       }
     },
     startProgressPolling() {
@@ -1110,13 +1207,13 @@ export default {
           }
           reader.readAsDataURL(file)
         }
-        this.$message.success(`已加载 ${files.length} 张图片`)
+        ElMessage.success(`已加载 ${files.length} 张图片`)
       }
       this.$refs.imageInput.value = ''
     },
     removeImage(index) {
       this.uploadedImages.splice(index, 1)
-      this.$message.success('图片已移除')
+      ElMessage.success('图片已移除')
     },
     handlePaste(e) {
       const items = e.clipboardData?.items
@@ -1135,7 +1232,7 @@ export default {
           }
         }
         if (imageCount > 0) {
-          this.$message.success(`已从剪贴板加载 ${imageCount} 张图片`)
+          ElMessage.success(`已从剪贴板加载 ${imageCount} 张图片`)
         }
       }
     },
@@ -1150,7 +1247,7 @@ export default {
     startNewConversation() {
       this.conversationId = null
       this.messages = []
-      this.$message.success('已开始新对话')
+      ElMessage.success('已开始新对话')
     },
     
     // 加载对话列表
@@ -1163,7 +1260,7 @@ export default {
         }
       } catch (e) {
         console.error('加载对话列表失败:', e)
-        this.$message.error('加载对话列表失败')
+        ElMessage.error('加载对话列表失败')
       } finally {
         this.historyLoading = false
       }
@@ -1188,18 +1285,18 @@ export default {
           // 关闭抽屉
           this.historyVisible = false
           
-          this.$message.success('已加载历史对话，您可以继续对话')
+          ElMessage.success('已加载历史对话，您可以继续对话')
         }
       } catch (e) {
         console.error('加载对话失败:', e)
-        this.$message.error('加载对话失败')
+        ElMessage.error('加载对话失败')
       }
     },
     
     // 删除对话
     async deleteConversation(conversationId) {
       try {
-        await this.$confirm('确定要删除这个对话吗？', '提示', {
+        await ElMessageBox.confirm('确定要删除这个对话吗？', '提示', {
           confirmButtonText: '确定',
           cancelButtonText: '取消',
           type: 'warning'
@@ -1216,12 +1313,12 @@ export default {
             this.messages = []
           }
           
-          this.$message.success('对话已删除')
+          ElMessage.success('对话已删除')
         }
       } catch (e) {
         if (e !== 'cancel') {
           console.error('删除对话失败:', e)
-          this.$message.error('删除对话失败')
+          ElMessage.error('删除对话失败')
         }
       }
     },
@@ -1467,7 +1564,7 @@ export default {
                 this.messages[msgIdx].isError = true
                 this.messageLoading = false
                 flushNow()
-                this.$message.error(`智能路由失败: ${data.data}`)
+                ElMessage.error(`智能路由失败: ${data.data}`)
                 streamDone = true
                 break
               }
@@ -1480,7 +1577,7 @@ export default {
         this.messages[msgIdx].content = `❌ 错误: ${e.message}`
         this.messages[msgIdx].isError = true
         flushNow()
-        this.$message.error(`智能路由请求失败: ${e.message}`)
+        ElMessage.error(`智能路由请求失败: ${e.message}`)
       } finally {
         this.messages[msgIdx].finished = true
         flushNow()
@@ -1662,7 +1759,7 @@ export default {
                   this.messages[msgIdx].isError = true
                   this.messageLoading = false
                   agentFlushNow()
-                  this.$message.error(`Agent 查询失败: ${data.data}`)
+                  ElMessage.error(`Agent 查询失败: ${data.data}`)
                   agentStreamDone = true
                   break
                 }
@@ -1677,7 +1774,7 @@ export default {
         this.messages[msgIdx].finished = true
         this.messages[msgIdx].isError = true
         agentFlushNow()
-        this.$message.error(`Agent 查询失败: ${e.message}`)
+        ElMessage.error(`Agent 查询失败: ${e.message}`)
       } finally {
         this.messageLoading = false
       }
@@ -1832,7 +1929,7 @@ export default {
                   this.messages[msgIdx].finished = true
                   this.messages[msgIdx].isError = true
                   this.messageLoading = false
-                  this.$message.error(`查询失败: ${data.data}`)
+                  ElMessage.error(`查询失败: ${data.data}`)
                   ragStreamDone = true
                 }
                 
@@ -1963,7 +2060,7 @@ export default {
           this.fileList = res.data.files
         }
       } catch (e) {
-        this.$message.error('加载文件列表失败')
+        ElMessage.error('加载文件列表失败')
       } finally {
         this.fileListLoading = false
       }
@@ -1981,7 +2078,7 @@ export default {
         }
       } catch (e) {
         const msg = e.response?.data?.detail || e.message
-        this.$message.error(`打开文件失败: ${msg}`)
+        ElMessage.error(`打开文件失败: ${msg}`)
       }
     },
     async saveFile() {
@@ -2020,32 +2117,32 @@ export default {
     async createNewFile() {
       const name = this.newFileName.trim()
       if (!name) {
-        this.$message.warning('请输入文件名')
+        ElMessage.warning('请输入文件名')
         return
       }
       try {
         const res = await axios.post(`${API_BASE}/files`, { name, content: '' })
         if (res.data.success) {
-          this.$message.success('文件已创建')
+          ElMessage.success('文件已创建')
           this.newFileVisible = false
           await this.loadFileList()
           this.openFile(res.data.name)
         }
       } catch (e) {
         const msg = e.response?.data?.detail || e.message
-        this.$message.error(`创建失败: ${msg}`)
+        ElMessage.error(`创建失败: ${msg}`)
       }
     },
     async confirmDeleteFile(filename) {
       try {
-        await this.$confirm(`确定要删除文件 "${filename}" 吗？此操作不可恢复。`, '删除确认', {
+        await ElMessageBox.confirm(`确定要删除文件 "${filename}" 吗？此操作不可恢复。`, '删除确认', {
           confirmButtonText: '删除',
           cancelButtonText: '取消',
           type: 'warning'
         })
         const res = await axios.delete(`${API_BASE}/files/${encodeURIComponent(filename)}`)
         if (res.data.success) {
-          this.$message.success('文件已删除')
+          ElMessage.success('文件已删除')
           if (this.editingFile && this.editingFile.name === filename) {
             this.editingFile = null
           }
@@ -2054,7 +2151,7 @@ export default {
       } catch (e) {
         if (e !== 'cancel') {
           const msg = e.response?.data?.detail || e.message
-          this.$message.error(`删除失败: ${msg}`)
+          ElMessage.error(`删除失败: ${msg}`)
         }
       }
     }

@@ -270,15 +270,18 @@ body::before {
 }
 
 .logo-icon {
-  font-size: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 48px;
   height: 48px;
-  background: var(--gradient-primary);
-  border-radius: var(--radius-md);
   flex-shrink: 0;
+}
+
+.logo-image {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-md), var(--shadow-glow);
   animation: pulse-glow 3s ease-in-out infinite;
 }
@@ -794,6 +797,175 @@ body::before {
   color: var(--text-secondary);
   max-width: 450px;
   line-height: 1.7;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hero-subtitle {
+  max-width: 760px !important;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.hero-primary-btn {
+  min-width: 190px;
+}
+
+.hero-status-grid {
+  width: min(100%, 960px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.hero-status-card {
+  padding: 18px 20px;
+  text-align: left;
+}
+
+.hero-status-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hero-status-value {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hero-status-value.is-ready {
+  color: var(--success);
+}
+
+.hero-status-value.is-empty {
+  color: var(--warning);
+}
+
+.hero-scenarios {
+  width: min(100%, 1100px);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.hero-scenario-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 20px;
+  text-align: left;
+}
+
+.hero-scenario-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.hero-scenario-card h3 {
+  font-size: 16px;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.hero-scenario-card p {
+  margin: 0;
+  max-width: none;
+  font-size: 14px;
+}
+
+.hero-quickstart,
+.hero-prompts {
+  width: min(100%, 960px);
+  padding: 20px 22px;
+  text-align: left;
+}
+
+.hero-section-title {
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hero-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hero-step {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.hero-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hero-prompt-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.hero-prompt-chip {
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-primary);
+  border-radius: var(--radius-full);
+  padding: 10px 16px;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.hero-prompt-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 /* Empty State Hint Cards */
@@ -1834,6 +2006,12 @@ body::before {
   .app-container::after {
     opacity: 0.3;
   }
+
+  .hero-status-grid,
+  .hero-scenarios,
+  .hero-steps {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1893,6 +2071,16 @@ body::before {
   
   .empty-state h2, .empty-state h3 {
     font-size: 22px;
+  }
+
+  .hero-actions,
+  .hero-prompt-list {
+    width: 100%;
+  }
+
+  .hero-prompt-chip {
+    width: 100%;
+    text-align: left;
   }
 }
 
