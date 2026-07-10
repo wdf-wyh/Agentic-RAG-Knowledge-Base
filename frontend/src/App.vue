@@ -39,6 +39,24 @@
           </div>
           
           <el-button
+            type="default"
+            @click="evalVisible = true"
+            class="mr-2 hover-lift"
+            title="RAG 评测回测"
+          >
+            📊 评测
+          </el-button>
+
+          <el-button
+            type="default"
+            @click="openTraces"
+            class="mr-2 hover-lift"
+            title="Agent 追踪"
+          >
+            🔍 追踪
+          </el-button>
+
+          <el-button
             type="primary"
             @click="kbVisible = true"
             class="mr-2 hover-lift"
@@ -141,7 +159,16 @@
               :loading="buildProgress.processing"
               class="build-btn"
             >
-              {{ buildProgress.processing ? '构建中...' : '开始构建' }}
+              {{ buildProgress.processing ? '构建中...' : '全量构建' }}
+            </el-button>
+            <el-button
+              type="default"
+              @click="startIncrementalBuild"
+              :loading="buildProgress.processing"
+              class="build-btn mt-2"
+              style="width:100%;margin-top:8px"
+            >
+              增量构建
             </el-button>
 
             <!-- 构建进度 -->
@@ -386,9 +413,14 @@
                 <el-collapse>
                   <el-collapse-item title="参考来源" name="sources">
                     <ul class="sources-list">
-                      <li v-for="(source, sidx) in msg.sources" :key="sidx" class="source-item">
-                        <div class="source-title">{{ source.source }}</div>
+                      <li v-for="(source, sidx) in msg.sources" :key="sidx" class="source-item" @click="highlightSource(source)">
+                        <div class="source-title">
+                          {{ source.filename || source.source }}
+                          <span v-if="source.page" class="source-page">P{{ source.page }}</span>
+                          <span v-if="source.chunk_index != null" class="source-chunk">#{{ source.chunk_index }}</span>
+                        </div>
                         <div class="source-preview">{{ source.preview }}</div>
+                        <div v-if="source._highlighted" class="source-highlight">{{ source.highlight_text }}</div>
                       </li>
                     </ul>
                   </el-collapse-item>
@@ -698,6 +730,59 @@
         </div>
       </div>
     </el-drawer>
+
+    <!-- RAG 评测面板 -->
+    <el-drawer v-model="evalVisible" title="📊 RAG 评测回测" size="45%">
+      <div class="eval-panel">
+        <p class="eval-desc">对比 vector / bm25 / hybrid 检索策略。默认快速回测；勾选 Rerank 会额外评测 hybrid+rerank（需加载大模型，较慢）。</p>
+        <el-checkbox v-model="evalIncludeRerank" :disabled="evalLoading" style="margin-bottom:12px">
+          包含 Rerank 对比（仅 hybrid）
+        </el-checkbox>
+        <el-button type="primary" @click="runBacktest" :loading="evalLoading" style="width:100%">
+          {{ evalLoading ? evalProgressText : '运行回测' }}
+        </el-button>
+        <el-progress
+          v-if="evalLoading && evalProgressTotal > 0"
+          :percentage="Math.round(evalProgress / evalProgressTotal * 100)"
+          :stroke-width="10"
+          style="margin-top:12px"
+        />
+        <div v-if="evalReport" class="eval-results">
+          <h4>最佳策略: {{ evalReport.best_strategy }}</h4>
+          <el-table :data="evalTableData" size="small" stripe>
+            <el-table-column prop="strategy" label="策略" />
+            <el-table-column prop="hit_rate" label="Hit Rate" />
+            <el-table-column prop="recall" label="Recall@K" />
+            <el-table-column prop="mrr" label="MRR" />
+            <el-table-column prop="latency" label="延迟(ms)" />
+          </el-table>
+        </div>
+      </div>
+    </el-drawer>
+
+    <!-- Agent 追踪面板 -->
+    <el-drawer v-model="traceVisible" title="🔍 Agent 追踪" size="45%">
+      <div class="trace-panel">
+        <el-button size="small" @click="loadTraces" style="margin-bottom:12px">刷新</el-button>
+        <div v-for="t in traceList" :key="t.trace_id" class="trace-item" @click="loadTraceDetail(t.trace_id)">
+          <div class="trace-q">{{ t.question }}</div>
+          <div class="trace-meta">
+            <span>{{ t.mode }}</span>
+            <span>{{ t.total_duration_ms }}ms</span>
+            <span>{{ t.step_count }} 步</span>
+            <el-tag :type="t.success ? 'success' : 'danger'" size="small">{{ t.success ? '成功' : '失败' }}</el-tag>
+          </div>
+        </div>
+        <div v-if="traceDetail" class="trace-detail">
+          <h4>推理步骤</h4>
+          <div v-for="step in traceDetail.steps" :key="step.step" class="trace-step">
+            <span class="trace-step-type">{{ step.type }}</span>
+            <span v-if="step.tool" class="trace-step-tool">{{ step.tool }}</span>
+            <div class="trace-step-content">{{ step.content }}</div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -730,6 +815,8 @@ export default {
   },
   data() {
     return {
+      Setting,
+      Loading,
       // 主题：暗色模式开关
       isDark: false,
       question: '',
@@ -738,7 +825,18 @@ export default {
       status: { vector_store_loaded: false },
       settingsVisible: false,
       kbVisible: false,
-      historyVisible: false,  // 对话历史抽屉
+      historyVisible: false,
+      evalVisible: false,
+      traceVisible: false,
+      evalLoading: false,
+      evalProgress: 0,
+      evalProgressTotal: 0,
+      evalCurrentStrategy: '',
+      evalPhase: '',
+      evalIncludeRerank: false,
+      evalReport: null,
+      traceList: [],
+      traceDetail: null,
       messageLoading: false,
       
       // 对话历史
@@ -820,6 +918,27 @@ export default {
       if (percentage < 30) return '#409eff'
       if (percentage < 70) return '#e6a23c'
       return '#67c23a'
+    },
+    evalTableData() {
+      if (!this.evalReport?.summary) return []
+      return Object.entries(this.evalReport.summary).map(([strategy, stats]) => ({
+        strategy,
+        hit_rate: (stats.hit_rate * 100).toFixed(1) + '%',
+        recall: (stats.avg_recall_at_k * 100).toFixed(1) + '%',
+        mrr: stats.avg_mrr.toFixed(3),
+        latency: stats.avg_latency_ms.toFixed(0),
+      }))
+    },
+    evalProgressText() {
+      if (this.evalPhase === 'loading_rerank') {
+        return '正在加载 Rerank 模型...'
+      }
+      if (this.evalProgressTotal > 0) {
+        const pct = Math.round(this.evalProgress / this.evalProgressTotal * 100)
+        const strategy = this.evalCurrentStrategy ? ` (${this.evalCurrentStrategy})` : ''
+        return `回测中 ${pct}%${strategy}`
+      }
+      return '回测启动中...'
     },
     currentModeDesc() {
       const mode = this.modeOptions.find(m => m.value === this.queryMode)
@@ -1165,6 +1284,78 @@ export default {
         ElMessage.error(`启动构建失败: ${e.message}`)
       }
     },
+    async startIncrementalBuild() {
+      try {
+        const res = await axios.post(`${API_BASE}/build-incremental`)
+        if (res.data.success) {
+          ElMessage.success('增量构建已启动')
+          this.startProgressPolling()
+        }
+      } catch (e) {
+        ElMessage.error(`增量构建失败: ${e.message}`)
+      }
+    },
+    async runBacktest() {
+      this.evalLoading = true
+      this.evalProgress = 0
+      this.evalProgressTotal = 0
+      this.evalCurrentStrategy = ''
+      this.evalPhase = ''
+      try {
+        const rerankOptions = this.evalIncludeRerank ? [false, true] : [false]
+        await axios.post(`${API_BASE}/eval/backtest-async`, {
+          dataset_path: 'data/demo_dataset/qa_pairs.json',
+          methods: ['vector', 'bm25', 'hybrid'],
+          rerank_options: rerankOptions,
+        })
+
+        const poll = async () => {
+          const res = await axios.get(`${API_BASE}/eval/backtest-status`)
+          const status = res.data
+          this.evalProgress = status.progress || 0
+          this.evalProgressTotal = status.total || 0
+          this.evalCurrentStrategy = status.current_strategy || ''
+          this.evalPhase = status.phase || ''
+          if (status.running) {
+            await new Promise(r => setTimeout(r, 1000))
+            return poll()
+          }
+          if (status.result?.error) {
+            throw new Error(status.result.error)
+          }
+          this.evalReport = status.result
+        }
+        await poll()
+        ElMessage.success(`回测完成，最佳策略: ${this.evalReport.best_strategy}`)
+      } catch (e) {
+        ElMessage.error(`回测失败: ${e.response?.data?.detail || e.message}`)
+      } finally {
+        this.evalLoading = false
+      }
+    },
+    async openTraces() {
+      this.traceVisible = true
+      await this.loadTraces()
+    },
+    async loadTraces() {
+      try {
+        const res = await axios.get(`${API_BASE}/traces`)
+        this.traceList = res.data.traces || []
+      } catch (e) {
+        ElMessage.error('加载追踪失败')
+      }
+    },
+    async loadTraceDetail(traceId) {
+      try {
+        const res = await axios.get(`${API_BASE}/traces/${traceId}`)
+        this.traceDetail = res.data
+      } catch (e) {
+        ElMessage.error('加载追踪详情失败')
+      }
+    },
+    highlightSource(source) {
+      source._highlighted = !source._highlighted
+    },
     startProgressPolling() {
       if (this.progressInterval) {
         clearInterval(this.progressInterval)
@@ -1445,6 +1636,19 @@ export default {
         const payload = {
           question: q,
           conversation_id: this.conversationId || null
+        }
+
+        if (this.provider && this.provider.trim()) {
+          payload.provider = this.provider.trim()
+        }
+        if (this.provider === 'ollama') {
+          if (this.ollamaModel && this.ollamaModel.trim()) payload.ollama_model = this.ollamaModel.trim()
+          if (this.ollamaApiUrl && this.ollamaApiUrl.trim()) payload.ollama_api_url = this.ollamaApiUrl.trim()
+        }
+        if (this.provider === 'deepseek') {
+          if (this.deepseekModel && this.deepseekModel.trim()) payload.deepseek_model = this.deepseekModel.trim()
+          if (this.deepseekApiUrl && this.deepseekApiUrl.trim()) payload.deepseek_api_url = this.deepseekApiUrl.trim()
+          if (this.deepseekApiKey && this.deepseekApiKey.trim()) payload.deepseek_api_key = this.deepseekApiKey.trim()
         }
 
         // 如果还没有会话 ID，先创建一个
@@ -2304,6 +2508,22 @@ export default {
 
 .dark .observation-url { color: #9fd1ff }
 .dark .observation-file { color: #b8d8ff }
+
+.source-item { cursor: pointer; transition: background 0.2s; }
+.source-page, .source-chunk { font-size: 11px; color: #409eff; margin-left: 6px; padding: 1px 5px; background: #ecf5ff; border-radius: 3px; }
+.source-highlight { margin-top: 6px; padding: 8px; background: #fffbe6; border-left: 3px solid #e6a23c; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.eval-panel, .trace-panel { padding: 16px; }
+.eval-desc { color: #909399; margin-bottom: 16px; font-size: 13px; }
+.eval-results { margin-top: 20px; }
+.trace-item { padding: 10px; border: 1px solid #ebeef5; border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
+.trace-item:hover { background: #f5f7fa; }
+.trace-q { font-weight: 500; margin-bottom: 4px; }
+.trace-meta { display: flex; gap: 10px; font-size: 12px; color: #909399; align-items: center; }
+.trace-detail { margin-top: 16px; border-top: 1px solid #ebeef5; padding-top: 12px; }
+.trace-step { margin-bottom: 10px; padding: 8px; background: #fafafa; border-radius: 4px; }
+.trace-step-type { font-weight: 600; color: #409eff; margin-right: 8px; text-transform: uppercase; font-size: 11px; }
+.trace-step-tool { font-size: 12px; color: #67c23a; }
+.trace-step-content { font-size: 12px; margin-top: 4px; color: #606266; white-space: pre-wrap; }
 
 /* 对话历史样式 */
 .history-content {

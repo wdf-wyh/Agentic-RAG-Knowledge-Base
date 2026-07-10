@@ -62,6 +62,7 @@ class Config:
     
     # 模型配置
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
     LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
     
     # 向量数据库配置
@@ -93,6 +94,24 @@ class Config:
     
     # RAG 性能优化配置
     RAG_FAST_MODE = os.getenv("RAG_FAST_MODE", "true").lower() == "true"
+
+    # 检索增强配置
+    DEFAULT_RETRIEVAL_METHOD = os.getenv("DEFAULT_RETRIEVAL_METHOD", "hybrid")  # vector | bm25 | hybrid
+    ENABLE_RERANK = os.getenv("ENABLE_RERANK", "true").lower() == "true"
+    RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+    ENABLE_HYDE = os.getenv("ENABLE_HYDE", "false").lower() == "true"
+    ENABLE_QUERY_REWRITE = os.getenv("ENABLE_QUERY_REWRITE", "true").lower() == "true"
+    ENABLE_GRAPH_RAG = os.getenv("ENABLE_GRAPH_RAG", "true").lower() == "true"
+
+    # GraphRAG / 增量索引
+    GRAPH_RAG_PATH = os.getenv("GRAPH_RAG_PATH", "./data/knowledge_graph.json")
+    INDEX_MANIFEST_PATH = os.getenv("INDEX_MANIFEST_PATH", "./data/index_manifest.json")
+    TRACE_STORAGE_PATH = os.getenv("TRACE_STORAGE_PATH", "./data/traces")
+
+    # JWT 鉴权
+    ENABLE_AUTH = os.getenv("ENABLE_AUTH", "false").lower() == "true"
+    JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production")
+    JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
     
     # 文档目录
     DOCUMENTS_PATH = "./documents"

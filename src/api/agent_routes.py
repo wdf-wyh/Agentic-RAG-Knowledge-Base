@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
+from contextlib import contextmanager
 import json
 import asyncio
 import logging
@@ -13,6 +14,8 @@ import threading
 from src.agent.rag_agent import RAGAgent, AgentBuilder
 from src.agent.base import AgentConfig, AgentResponse, StreamEvent
 from src.config.settings import Config
+from src.services.conversation_manager import ConversationManager
+from src.utils.tracing import get_trace_collector
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -75,6 +78,41 @@ class SmartQueryRequest(BaseModel):
     """智能查询请求 - 大模型分析意图后自动选择处理方式"""
     question: str = Field(..., description="用户问题")
     conversation_id: Optional[str] = Field(None, description="会话ID（用于多轮对话）")
+    provider: Optional[str] = Field(None, description="模型提供者: deepseek/ollama/openai/gemini")
+    ollama_model: Optional[str] = None
+    ollama_api_url: Optional[str] = None
+    deepseek_model: Optional[str] = None
+    deepseek_api_url: Optional[str] = None
+    deepseek_api_key: Optional[str] = None
+
+
+@contextmanager
+def provider_context(req: SmartQueryRequest):
+    """临时应用前端传入的模型提供者配置"""
+    originals: Dict[str, Any] = {}
+    updates: Dict[str, Any] = {}
+
+    if req.provider and req.provider.strip():
+        updates["MODEL_PROVIDER"] = req.provider.strip().lower()
+    if req.ollama_model and req.ollama_model.strip():
+        updates["OLLAMA_MODEL"] = req.ollama_model.strip()
+    if req.ollama_api_url and req.ollama_api_url.strip():
+        updates["OLLAMA_API_URL"] = req.ollama_api_url.strip()
+    if req.deepseek_model and req.deepseek_model.strip():
+        updates["LLM_MODEL"] = req.deepseek_model.strip()
+    if req.deepseek_api_url and req.deepseek_api_url.strip():
+        updates["DEEPSEEK_API_URL"] = req.deepseek_api_url.strip()
+    if req.deepseek_api_key and req.deepseek_api_key.strip():
+        updates["DEEPSEEK_API_KEY"] = req.deepseek_api_key.strip()
+
+    try:
+        for key, value in updates.items():
+            originals[key] = getattr(Config, key)
+            setattr(Config, key, value)
+        yield
+    finally:
+        for key, value in originals.items():
+            setattr(Config, key, value)
 
 
 class ConversationCreateResponse(BaseModel):
@@ -200,6 +238,18 @@ async def agent_query(req: AgentQueryRequest):
         
         elapsed = time.time() - start_time
         logger.info(f"[Agent Query] 查询完成 - 耗时: {elapsed:.2f}秒, 迭代次数: {result.iterations}, 使用工具: {result.tools_used}")
+
+        # 保存追踪记录
+        collector = get_trace_collector()
+        trace_id = collector.start(req.question, mode="agent")
+        for step in result.thought_process:
+            if step.thought:
+                collector.add_step(step.step, "thought", step.thought)
+            if step.action:
+                collector.add_step(step.step, "action", str(step.action_input or ""), tool=step.action)
+            if step.observation:
+                collector.add_step(step.step, "observation", step.observation)
+        collector.finish(result.answer, success=result.success)
         
         return AgentQueryResponse(
             success=result.success,
@@ -239,25 +289,26 @@ async def smart_query(req: SmartQueryRequest):
     logger.info(f"[Smart Query] 开始处理 - 问题: {req.question[:100]}...")
     
     try:
-        agent = get_or_create_agent("full")  # 智能模式使用完整 Agent
-        
-        # 如果提供了 conversation_id，设置当前会话
-        if req.conversation_id:
-            agent.set_conversation(req.conversation_id)
-            logger.info(f"[Smart Query] 使用会话ID: {req.conversation_id}")
-            # 使用带保存历史的查询
-            result = await asyncio.to_thread(
-                agent.smart_query, 
-                req.question, 
-                save_to_history=True
-            )
-        else:
-            # 不保存历史
-            result = await asyncio.to_thread(
-                agent.smart_query, 
-                req.question,
-                save_to_history=False
-            )
+        with provider_context(req):
+            agent = get_or_create_agent("full", force_new=bool(req.provider))
+
+            # 如果提供了 conversation_id，设置当前会话
+            if req.conversation_id:
+                agent.set_conversation(req.conversation_id)
+                logger.info(f"[Smart Query] 使用会话ID: {req.conversation_id}")
+                # 使用带保存历史的查询
+                result = await asyncio.to_thread(
+                    agent.smart_query,
+                    req.question,
+                    save_to_history=True
+                )
+            else:
+                # 不保存历史
+                result = await asyncio.to_thread(
+                    agent.smart_query,
+                    req.question,
+                    save_to_history=False
+                )
         
         elapsed = time.time() - start_time
         logger.info(f"[Smart Query] 完成 - 耗时: {elapsed:.2f}秒, 工具: {result.tools_used}")
@@ -285,26 +336,27 @@ async def smart_query_stream(req: SmartQueryRequest):
         import threading
 
         try:
-            agent = get_or_create_agent("full")
+            with provider_context(req):
+                agent = get_or_create_agent("full", force_new=bool(req.provider))
 
-            if req.conversation_id:
-                agent.set_conversation(req.conversation_id)
+                if req.conversation_id:
+                    agent.set_conversation(req.conversation_id)
 
-            event_queue = queue.Queue()
+                event_queue = queue.Queue()
 
-            def stream_worker():
-                try:
-                    for event in agent.smart_query_stream(
-                        req.question,
-                        save_to_history=bool(req.conversation_id)
-                    ):
-                        event_queue.put(event)
-                    event_queue.put(None)  # 结束标记
-                except Exception as e:
-                    event_queue.put(Exception(str(e)))
+                def stream_worker():
+                    try:
+                        for event in agent.smart_query_stream(
+                            req.question,
+                            save_to_history=bool(req.conversation_id)
+                        ):
+                            event_queue.put(event)
+                        event_queue.put(None)  # 结束标记
+                    except Exception as e:
+                        event_queue.put(Exception(str(e)))
 
-            worker_thread = threading.Thread(target=stream_worker, daemon=True)
-            worker_thread.start()
+                worker_thread = threading.Thread(target=stream_worker, daemon=True)
+                worker_thread.start()
 
             while True:
                 try:
@@ -549,10 +601,9 @@ async def execute_tool(tool_name: str, params: Dict[str, Any]):
 async def create_conversation():
     """创建新的对话会话"""
     try:
-        agent = get_or_create_agent()
-        conversation_id = agent.start_conversation()
+        conversation_id = ConversationManager().create_conversation()
         logger.info(f"[Conversation] 创建新会话: {conversation_id}")
-        
+
         return ConversationCreateResponse(
             conversation_id=conversation_id,
             message="对话已创建"

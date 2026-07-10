@@ -181,11 +181,16 @@ class DocumentProcessor:
                     meta['source'] = src
                     # chunk_id: 文件名 + 块序号，便于定位
                     try:
-                        fname = str(src).split('/')[-1]
+                        fname = str(src).split('/')[-1].split('\\')[-1]
                     except Exception:
                         fname = str(src)
                     meta['chunk_id'] = f"{fname}::chunk_{idx}"
                     meta['chunk_index'] = idx
+                    # PDF 页码（PyPDFLoader 提供 page 字段，从 0 开始）
+                    if 'page' in meta:
+                        meta['page'] = int(meta['page']) + 1
+                    elif 'page_number' in meta:
+                        meta['page'] = int(meta['page_number'])
             except Exception:
                 continue
 

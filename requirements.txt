@@ -42,6 +42,8 @@ rank_bm25>=0.2.1
 
 fastapi>=0.95.0
 uvicorn[standard]>=0.22.0
+python-jose[cryptography]>=3.3.0
+pytest>=7.4.0
 
 # ===== Agent 功能依赖 =====
 # 网页搜索 (选择一个或多个)

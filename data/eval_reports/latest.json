@@ -1,0 +1,965 @@
+{
+  "dataset": "data/demo_dataset/qa_pairs.json",
+  "total_cases": 10,
+  "summary": {
+    "vector": {
+      "hit_rate": 1.0,
+      "avg_recall_at_k": 1.0,
+      "avg_mrr": 0.9,
+      "avg_latency_ms": 13.024000000000001,
+      "total_cases": 10
+    },
+    "vector+rerank": {
+      "hit_rate": 1.0,
+      "avg_recall_at_k": 1.0,
+      "avg_mrr": 1.0,
+      "avg_latency_ms": 297092.665,
+      "total_cases": 10
+    },
+    "bm25": {
+      "hit_rate": 0.9,
+      "avg_recall_at_k": 0.9666666666666666,
+      "avg_mrr": 0.95,
+      "avg_latency_ms": 83.888,
+      "total_cases": 10
+    },
+    "bm25+rerank": {
+      "hit_rate": 1.0,
+      "avg_recall_at_k": 1.0,
+      "avg_mrr": 1.0,
+      "avg_latency_ms": 15049.530999999999,
+      "total_cases": 10
+    },
+    "hybrid": {
+      "hit_rate": 0.9,
+      "avg_recall_at_k": 0.9666666666666666,
+      "avg_mrr": 0.95,
+      "avg_latency_ms": 63.840999999999994,
+      "total_cases": 10
+    },
+    "hybrid+rerank": {
+      "hit_rate": 1.0,
+      "avg_recall_at_k": 1.0,
+      "avg_mrr": 1.0,
+      "avg_latency_ms": 22662.706,
+      "total_cases": 10
+    }
+  },
+  "best_strategy": "vector+rerank",
+  "results": {
+    "vector": [
+      {
+        "question": "深度学习有哪些主要架构？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 47.6,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\DeepSeek-V4满血版免费使用教程-NVIDIA-NIM平台接入指南.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "CNN 主要用于什么任务？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 9.0,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "什么是 RAG？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 8.99,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "混合检索有什么好处？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 10.64,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "Rerank 重排序用什么模型？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 0.5,
+        "keyword_recall": 1.0,
+        "latency_ms": 9.0,
+        "retrieved_sources": [
+          "documents\\DeepSeek-V4满血版免费使用教程-NVIDIA-NIM平台接入指南.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "## 三、其他可用模型\n\n除了 V4 系列，NIM 上还可以试用以下开源模型：\n\n- `z-ai/glm-5.1`、`z-ai/glm-5`\n- `minimaxai/minimax-m2.7`\n- `moonshotai/kimi-k2.5`\n- `openai/gpt-oss-120b`\n\n--"
+      },
+      {
+        "question": "ReAct 推理框架是什么？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 9.0,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "Agentic RAG 和纯 RAG 有什么区别？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 10.0,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "RAG 评测有哪些指标？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 9.01,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "## 评估指标\n\n- **Hit Rate**：检索结果是否包含正确答案\n- **Recall@K**：Top-K 结果中关键词召回比例\n- **MRR**：第一个正确结果的排名倒数均值\n- **Faithfulness**：生成答案与检索上下文的一致性\n\n## 最佳实践\n\n- Chunk Size"
+      },
+      {
+        "question": "Transformer 的核心机制是什么？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 9.0,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "本地部署推荐用什么嵌入模型？",
+        "method": "vector",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 0.5,
+        "keyword_recall": 1.0,
+        "latency_ms": 8.0,
+        "retrieved_sources": [
+          "documents\\DeepSeek-V4满血版免费使用教程-NVIDIA-NIM平台接入指南.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "## 三、其他可用模型\n\n除了 V4 系列，NIM 上还可以试用以下开源模型：\n\n- `z-ai/glm-5.1`、`z-ai/glm-5`\n- `minimaxai/minimax-m2.7`\n- `moonshotai/kimi-k2.5`\n- `openai/gpt-oss-120b`\n\n--"
+      }
+    ],
+    "vector+rerank": [
+      {
+        "question": "深度学习有哪些主要架构？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 2842771.27,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "CNN 主要用于什么任务？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14479.25,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\DeepSeek-V4满血版免费使用教程-NVIDIA-NIM平台接入指南.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "什么是 RAG？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14787.85,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "混合检索有什么好处？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14002.73,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "Rerank 重排序用什么模型？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14072.61,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "ReAct 推理框架是什么？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14372.81,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\ngrok-操作手册.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "Agentic RAG 和纯 RAG 有什么区别？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14622.17,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "RAG 评测有哪些指标？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 13950.43,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "## 评估指标\n\n- **Hit Rate**：检索结果是否包含正确答案\n- **Recall@K**：Top-K 结果中关键词召回比例\n- **MRR**：第一个正确结果的排名倒数均值\n- **Faithfulness**：生成答案与检索上下文的一致性\n\n## 最佳实践\n\n- Chunk Size"
+      },
+      {
+        "question": "Transformer 的核心机制是什么？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 13853.67,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "本地部署推荐用什么嵌入模型？",
+        "method": "vector",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14013.86,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "## GraphRAG 扩展\n\n通过实体关系抽取构建知识图谱，支持多跳推理查询，例如\"A 部门与 B 项目的关系\"。\n\n## 部署建议\n\n- 本地部署：Ollama + bge-small-zh 嵌入模型\n- 云端部署：DeepSeek API + Docker Compose\n- 生产环境：启用 "
+      }
+    ],
+    "bm25": [
+      {
+        "question": "深度学习有哪些主要架构？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 510.72,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\Nginx反向代理改子域名配置指南（宝塔面板子域名反向代理配置）.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "CNN 主要用于什么任务？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 35.99,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "什么是 RAG？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": false,
+        "recall_at_k": 0.6666666666666666,
+        "mrr": 0.5,
+        "keyword_recall": 0.6666666666666666,
+        "latency_ms": 36.0,
+        "retrieved_sources": [
+          "documents\\ssl证书.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "## 核心经验总结（下次遇到同样问题）\n\n### 排查三步走命令\n\n```bash\n# 第 1 步：查主域名 NS 在哪\ndig NS fenglian16.com\n\n# 第 2 步：查子域名 NS 有没有被单独委托\ndig NS ty.fenglian16.com\n\n# 第 3 步：查 CNAME"
+      },
+      {
+        "question": "混合检索有什么好处？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 36.93,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "Rerank 重排序用什么模型？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 37.11,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "ReAct 推理框架是什么？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 36.99,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "Agentic RAG 和纯 RAG 有什么区别？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 37.02,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "RAG 评测有哪些指标？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 36.01,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "## 评估指标\n\n- **Hit Rate**：检索结果是否包含正确答案\n- **Recall@K**：Top-K 结果中关键词召回比例\n- **MRR**：第一个正确结果的排名倒数均值\n- **Faithfulness**：生成答案与检索上下文的一致性\n\n## 最佳实践\n\n- Chunk Size"
+      },
+      {
+        "question": "Transformer 的核心机制是什么？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 35.53,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "本地部署推荐用什么嵌入模型？",
+        "method": "bm25",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 36.58,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\DeepSeek-V4满血版免费使用教程-NVIDIA-NIM平台接入指南.md"
+        ],
+        "top_preview": "## GraphRAG 扩展\n\n通过实体关系抽取构建知识图谱，支持多跳推理查询，例如\"A 部门与 B 项目的关系\"。\n\n## 部署建议\n\n- 本地部署：Ollama + bge-small-zh 嵌入模型\n- 云端部署：DeepSeek API + Docker Compose\n- 生产环境：启用 "
+      }
+    ],
+    "bm25+rerank": [
+      {
+        "question": "深度学习有哪些主要架构？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 22027.93,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "CNN 主要用于什么任务？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14644.37,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\SEO问题总结.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "什么是 RAG？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14003.5,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "混合检索有什么好处？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14626.74,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "Rerank 重排序用什么模型？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 13602.47,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "ReAct 推理框架是什么？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14361.7,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\ngrok-操作手册.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "Agentic RAG 和纯 RAG 有什么区别？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14463.33,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "RAG 评测有哪些指标？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14478.34,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "## 评估指标\n\n- **Hit Rate**：检索结果是否包含正确答案\n- **Recall@K**：Top-K 结果中关键词召回比例\n- **MRR**：第一个正确结果的排名倒数均值\n- **Faithfulness**：生成答案与检索上下文的一致性\n\n## 最佳实践\n\n- Chunk Size"
+      },
+      {
+        "question": "Transformer 的核心机制是什么？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 14650.15,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "本地部署推荐用什么嵌入模型？",
+        "method": "bm25",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 13636.78,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "## GraphRAG 扩展\n\n通过实体关系抽取构建知识图谱，支持多跳推理查询，例如\"A 部门与 B 项目的关系\"。\n\n## 部署建议\n\n- 本地部署：Ollama + bge-small-zh 嵌入模型\n- 云端部署：DeepSeek API + Docker Compose\n- 生产环境：启用 "
+      }
+    ],
+    "hybrid": [
+      {
+        "question": "深度学习有哪些主要架构？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 111.51,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\Nginx反向代理改子域名配置指南（宝塔面板子域名反向代理配置）.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "CNN 主要用于什么任务？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 51.56,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "什么是 RAG？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": false,
+        "recall_at_k": 0.6666666666666666,
+        "mrr": 0.5,
+        "keyword_recall": 0.6666666666666666,
+        "latency_ms": 52.01,
+        "retrieved_sources": [
+          "documents\\ssl证书.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "## 核心经验总结（下次遇到同样问题）\n\n### 排查三步走命令\n\n```bash\n# 第 1 步：查主域名 NS 在哪\ndig NS fenglian16.com\n\n# 第 2 步：查子域名 NS 有没有被单独委托\ndig NS ty.fenglian16.com\n\n# 第 3 步：查 CNAME"
+      },
+      {
+        "question": "混合检索有什么好处？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 54.0,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "Rerank 重排序用什么模型？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 58.34,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "ReAct 推理框架是什么？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 51.0,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "Agentic RAG 和纯 RAG 有什么区别？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 56.77,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "RAG 评测有哪些指标？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 78.63,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "## 评估指标\n\n- **Hit Rate**：检索结果是否包含正确答案\n- **Recall@K**：Top-K 结果中关键词召回比例\n- **MRR**：第一个正确结果的排名倒数均值\n- **Faithfulness**：生成答案与检索上下文的一致性\n\n## 最佳实践\n\n- Chunk Size"
+      },
+      {
+        "question": "Transformer 的核心机制是什么？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 66.59,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\ssl证书.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "本地部署推荐用什么嵌入模型？",
+        "method": "hybrid",
+        "rerank": false,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 58.0,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\DeepSeek-V4满血版免费使用教程-NVIDIA-NIM平台接入指南.md"
+        ],
+        "top_preview": "## GraphRAG 扩展\n\n通过实体关系抽取构建知识图谱，支持多跳推理查询，例如\"A 部门与 B 项目的关系\"。\n\n## 部署建议\n\n- 本地部署：Ollama + bge-small-zh 嵌入模型\n- 云端部署：DeepSeek API + Docker Compose\n- 生产环境：启用 "
+      }
+    ],
+    "hybrid+rerank": [
+      {
+        "question": "深度学习有哪些主要架构？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 31847.58,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "CNN 主要用于什么任务？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 23549.14,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\DeepSeek-V4满血版免费使用教程-NVIDIA-NIM平台接入指南.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "什么是 RAG？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 21700.47,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_agentic_rag.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "混合检索有什么好处？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 20378.69,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "Rerank 重排序用什么模型？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 21353.66,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# RAG 检索增强生成技术指南\n\nRAG（Retrieval-Augmented Generation）是一种将信息检索与大语言模型生成相结合的技术架构。\n\n## 核心流程\n\n1. **文档入库**：将知识文档切分为文本块（Chunk），生成向量嵌入存入向量数据库\n2. **检索**：用户提问时，"
+      },
+      {
+        "question": "ReAct 推理框架是什么？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 23316.94,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\ngrok-操作手册.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "Agentic RAG 和纯 RAG 有什么区别？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 22180.68,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# Agentic RAG 系统架构\n\nAgentic RAG 将 Agent 自主决策能力与 RAG 检索相结合，实现更复杂的多步骤知识问答。\n\n## 架构组件\n\n### ReAct 推理框架\nAgent 按照 Thought（思考）→ Action（行动）→ Observation（观察）循环推"
+      },
+      {
+        "question": "RAG 评测有哪些指标？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 19556.37,
+        "retrieved_sources": [
+          "documents\\demo_rag_guide.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "## 评估指标\n\n- **Hit Rate**：检索结果是否包含正确答案\n- **Recall@K**：Top-K 结果中关键词召回比例\n- **MRR**：第一个正确结果的排名倒数均值\n- **Faithfulness**：生成答案与检索上下文的一致性\n\n## 最佳实践\n\n- Chunk Size"
+      },
+      {
+        "question": "Transformer 的核心机制是什么？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 22864.88,
+        "retrieved_sources": [
+          "documents\\demo_deep_learning.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "# 深度学习架构概览\n\n深度学习是机器学习的一个分支，通过多层神经网络自动学习数据的层次化表示。\n\n## 主要架构类型\n\n### CNN（卷积神经网络）\nCNN 主要用于图像识别和计算机视觉任务。其核心思想是使用卷积层提取局部特征，通过池化层降低维度。典型应用包括图像分类、目标检测和人脸识别。\n\n#"
+      },
+      {
+        "question": "本地部署推荐用什么嵌入模型？",
+        "method": "hybrid",
+        "rerank": true,
+        "hit": true,
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "keyword_recall": 1.0,
+        "latency_ms": 19878.65,
+        "retrieved_sources": [
+          "documents\\demo_agentic_rag.md",
+          "documents\\demo_rag_guide.md"
+        ],
+        "top_preview": "## GraphRAG 扩展\n\n通过实体关系抽取构建知识图谱，支持多跳推理查询，例如\"A 部门与 B 项目的关系\"。\n\n## 部署建议\n\n- 本地部署：Ollama + bge-small-zh 嵌入模型\n- 云端部署：DeepSeek API + Docker Compose\n- 生产环境：启用 "
+      }
+    ]
+  },
+  "mode": "local",
+  "timestamp": "2026-07-10 06:22:58"
+}

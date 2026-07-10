@@ -16,6 +16,9 @@ from pydantic import BaseModel
 from src.config.settings import Config
 from src.core.document_processor import DocumentProcessor
 from src.core.vector_store import VectorStore
+from src.core.incremental_index import IncrementalIndexer
+from src.core.graph_rag import KnowledgeGraph
+from src.plugins.base import run_hooks
 from src.services.rag_assistant import RAGAssistant
 from src.services.conversation_manager import ConversationManager
 from src.services.ollama_client import generate as ollama_generate, OllamaError
@@ -38,6 +41,26 @@ _build_progress = {
     "current_file": "",
     "status": "idle"
 }
+
+
+def format_source(doc) -> dict:
+    """格式化来源信息，含页码与块索引"""
+    meta = getattr(doc, "metadata", {}) if hasattr(doc, "metadata") else {}
+    if not isinstance(meta, dict):
+        meta = {}
+    src = meta.get("source", "未知来源")
+    preview = getattr(doc, "page_content", "") or ""
+    preview = preview[:300].replace("\n", " ")
+    fname = str(src).replace("\\", "/").split("/")[-1]
+    return {
+        "source": src,
+        "filename": fname,
+        "page": meta.get("page"),
+        "chunk_index": meta.get("chunk_index"),
+        "chunk_id": meta.get("chunk_id"),
+        "preview": preview,
+        "highlight_text": (getattr(doc, "page_content", "") or "")[:500],
+    }
 
 
 def generate_trace_id() -> str:
@@ -162,6 +185,16 @@ def build(req: BuildRequest):
 
         vector_store = VectorStore()
         vector_store.create_vectorstore(chunks)
+
+        # 构建知识图谱
+        if Config.ENABLE_GRAPH_RAG:
+            try:
+                kg = KnowledgeGraph()
+                kg.build_from_chunks(chunks)
+            except Exception as ge:
+                logger.warning("知识图谱构建失败: %s", ge)
+
+        run_hooks("after_build", chunks)
         
         # 重新加载 assistant
         global _assistant
@@ -269,6 +302,45 @@ async def upload_file(file: UploadFile = File(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/build-incremental")
+async def build_incremental(background_tasks: BackgroundTasks):
+    """增量构建知识库（仅处理变更文件）"""
+    if _build_progress["processing"]:
+        return {"success": False, "message": "已有构建任务进行中"}
+
+    def _incremental_task():
+        global _build_progress, _assistant
+        try:
+            _build_progress.update({"processing": True, "status": "incremental", "progress": 0})
+            indexer = IncrementalIndexer()
+            result = indexer.process_incremental("./documents")
+            chunks = result["chunks"]
+            if not chunks and not result["deleted_files"]:
+                _build_progress.update({"status": "completed", "current_file": "无变更", "processing": False})
+                return
+            vs = VectorStore()
+            if vs.load_vectorstore() is None:
+                vs.create_vectorstore(chunks)
+            else:
+                vs.add_documents(chunks)
+            if Config.ENABLE_GRAPH_RAG and chunks:
+                KnowledgeGraph().build_from_chunks(chunks)
+            _assistant = None
+            load_assistant()
+            _build_progress.update({
+                "status": "completed",
+                "progress": result["new_chunks"],
+                "total": result["new_chunks"],
+                "current_file": f"变更 {len(result['changed_files'])} 文件",
+                "processing": False,
+            })
+        except Exception as e:
+            _build_progress.update({"status": "error", "current_file": str(e), "processing": False})
+
+    background_tasks.add_task(_incremental_task)
+    return {"success": True, "message": "增量构建已启动"}
 
 
 @router.post("/build-start")
@@ -544,7 +616,11 @@ async def query_stream(req: QueryRequest):
                         assistant = get_assistant()
                     
                     logger.info(f"[Ollama] 开始检索文档...")
-                    docs = assistant.retrieve_documents(req.question, k=Config.TOP_K)
+                    docs = assistant.retrieve_documents(
+                        req.question, k=Config.TOP_K,
+                        method=req.method or Config.DEFAULT_RETRIEVAL_METHOD,
+                        rerank=req.rerank if req.rerank is not None else Config.ENABLE_RERANK,
+                    )
                     logger.info(f"[Ollama] 问题: {req.question}")
                     logger.info(f"[Ollama] 检索到 {len(docs)} 个文档")
                     logger.debug(f"[Ollama] 问题: {req.question}")
@@ -605,16 +681,11 @@ async def query_stream(req: QueryRequest):
                     model_name = req.ollama_model or Config.OLLAMA_MODEL
                     api_url = req.ollama_api_url or Config.OLLAMA_API_URL
                     
-                    sources = []
-                    for doc in docs:
-                        src = getattr(doc, 'metadata', {}).get('source', '未知来源') if hasattr(doc, 'metadata') else '未知来源'
-                        preview = getattr(doc, 'page_content', '')
-                        preview = preview[:200].replace('\n', ' ') if preview else ''
-                        sources.append({"source": src, "preview": preview})
-                    
-                    # 先发送会话ID，确保前端立即获取
+                    sources = [format_source(doc) for doc in docs]
+
+                    # 先发送会话ID
                     yield f"data: {json.dumps({'type': 'conversation_id', 'data': conversation_id})}\n\n"
-                    
+
                     meta_info = {'returned': len(docs)}
                     if getattr(Config, 'MAX_DISTANCE', None) is not None:
                         meta_info['note'] = f"应用 MAX_DISTANCE={Config.MAX_DISTANCE} 进行过滤"
@@ -673,7 +744,11 @@ async def query_stream(req: QueryRequest):
                         assistant = get_assistant()
 
                     logger.info(f"[DeepSeek] 开始检索文档...")
-                    docs = assistant.retrieve_documents(req.question, k=Config.TOP_K)
+                    docs = assistant.retrieve_documents(
+                        req.question, k=Config.TOP_K,
+                        method=req.method or Config.DEFAULT_RETRIEVAL_METHOD,
+                        rerank=req.rerank if req.rerank is not None else Config.ENABLE_RERANK,
+                    )
                     logger.info(f"[DeepSeek] 检索到 {len(docs)} 个文档")
                     if not docs:
                         similarity_threshold = getattr(Config, 'SIMILARITY_THRESHOLD', None)
@@ -718,12 +793,7 @@ async def query_stream(req: QueryRequest):
                     api_url = req.deepseek_api_url or Config.DEEPSEEK_API_URL
                     api_key = req.deepseek_api_key or Config.DEEPSEEK_API_KEY
 
-                    sources = []
-                    for doc in docs:
-                        src = getattr(doc, 'metadata', {}).get('source', '未知来源') if hasattr(doc, 'metadata') else '未知来源'
-                        preview = getattr(doc, 'page_content', '')
-                        preview = preview[:200].replace('\n', ' ') if preview else ''
-                        sources.append({"source": src, "preview": preview})
+                    sources = [format_source(doc) for doc in docs]
 
                     # 先发送会话ID，确保前端立即获取
                     yield f"data: {json.dumps({'type': 'conversation_id', 'data': conversation_id})}\n\n"
@@ -771,8 +841,8 @@ async def query_stream(req: QueryRequest):
                 # 默认使用 RAGAssistant
                 try:
                     assistant = get_assistant()
-                    method = req.method or 'vector'
-                    rerank = bool(req.rerank) if req.rerank is not None else False
+                    method = req.method or Config.DEFAULT_RETRIEVAL_METHOD
+                    rerank = req.rerank if req.rerank is not None else Config.ENABLE_RERANK
                     top_k = req.top_k or Config.TOP_K
                     
                     # 使用对话历史调用query
@@ -789,13 +859,7 @@ async def query_stream(req: QueryRequest):
                         history if history else None
                     )
                     answer = result.get("answer", "")
-                    sources = []
-                    if "sources" in result and result["sources"]:
-                        for doc in result["sources"]:
-                            src = doc.metadata.get("source", "未知来源")
-                            preview = getattr(doc, "page_content", "")
-                            preview = preview[:200].replace("\n", " ") if preview else ""
-                            sources.append({"source": src, "preview": preview})
+                    sources = [format_source(doc) for doc in result.get("sources", [])]
                     
                     # 先发送会话ID，确保前端立即获取
                     yield f"data: {json.dumps({'type': 'conversation_id', 'data': conversation_id})}\n\n"

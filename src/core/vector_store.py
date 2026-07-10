@@ -60,7 +60,8 @@ class VectorStore:
 
             class LocalEmbeddings:
                 """本地 Embeddings 适配器，提供 embed_documents 与 embed_query 方法"""
-                def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5", max_retries: int = 5):
+                def __init__(self, model_name: str = None, max_retries: int = 5):
+                    model_name = model_name or Config.LOCAL_EMBEDDING_MODEL
                     # 使用支持中文的嵌入模型，提升中文语义检索效果
                     self.model = None
                     # 设置 Hugging Face 镜像源（中国区）

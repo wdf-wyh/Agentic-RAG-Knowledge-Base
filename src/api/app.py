@@ -8,6 +8,11 @@ from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
 from src.api.agent_routes import router as agent_router
+from src.api.eval_routes import router as eval_router
+from src.api.trace_routes import router as trace_router
+from src.api.graph_routes import router as graph_router
+from src.api.auth_routes import router as auth_router
+from src.plugins.base import load_plugins
 from src.utils.logger import setup_logging
 
 
@@ -71,7 +76,14 @@ def create_app() -> FastAPI:
     
     # 注册路由
     app.include_router(router, prefix="/api")
-    app.include_router(agent_router, prefix="/api")  # Agent 路由
+    app.include_router(agent_router, prefix="/api")
+    app.include_router(eval_router, prefix="/api")
+    app.include_router(trace_router, prefix="/api")
+    app.include_router(graph_router, prefix="/api")
+    app.include_router(auth_router, prefix="/api")
+
+    # 加载插件
+    load_plugins()
 
     # 静态文件服务 - 生成的图片
     generated_images_dir = Path("output/generated_images")
@@ -91,11 +103,14 @@ def create_app() -> FastAPI:
             "description": "具备自主决策能力的 RAG 知识库系统",
             "features": [
                 "RAG 检索增强生成",
+                "Hybrid 混合检索 + Rerank",
+                "RAG 评测回测",
+                "GraphRAG 知识图谱",
+                "Agent Tracing 可观测性",
+                "MCP Server 支持",
                 "ReAct 推理框架",
-                "多工具协调",
-                "自省与反思",
-                "网页搜索",
-                "文件管理"
+                "增量索引",
+                "JWT 鉴权",
             ],
             "docs": "/docs"
         }

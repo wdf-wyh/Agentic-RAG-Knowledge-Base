@@ -1,0 +1,62 @@
+[
+  {
+    "question": "深度学习有哪些主要架构？",
+    "expected_keywords": ["CNN", "RNN", "Transformer", "GAN"],
+    "expected_sources": ["demo_deep_learning.md"],
+    "ground_truth": "深度学习主要架构包括 CNN、RNN、Transformer 和 GAN"
+  },
+  {
+    "question": "CNN 主要用于什么任务？",
+    "expected_keywords": ["图像", "卷积", "视觉"],
+    "expected_sources": ["demo_deep_learning.md"],
+    "ground_truth": "CNN 主要用于图像识别和计算机视觉任务"
+  },
+  {
+    "question": "什么是 RAG？",
+    "expected_keywords": ["检索", "增强", "生成"],
+    "expected_sources": ["demo_rag_guide.md"],
+    "ground_truth": "RAG 是将信息检索与大语言模型生成相结合的技术"
+  },
+  {
+    "question": "混合检索有什么好处？",
+    "expected_keywords": ["向量", "BM25", "语义", "关键词"],
+    "expected_sources": ["demo_rag_guide.md"],
+    "ground_truth": "混合检索兼顾语义理解和关键词匹配"
+  },
+  {
+    "question": "Rerank 重排序用什么模型？",
+    "expected_keywords": ["bge-reranker", "Cross-Encoder"],
+    "expected_sources": ["demo_rag_guide.md"],
+    "ground_truth": "推荐使用 bge-reranker-v2-m3 模型"
+  },
+  {
+    "question": "ReAct 推理框架是什么？",
+    "expected_keywords": ["Thought", "Action", "Observation"],
+    "expected_sources": ["demo_agentic_rag.md"],
+    "ground_truth": "ReAct 按照思考、行动、观察循环推理"
+  },
+  {
+    "question": "Agentic RAG 和纯 RAG 有什么区别？",
+    "expected_keywords": ["多步", "工具", "推理"],
+    "expected_sources": ["demo_agentic_rag.md"],
+    "ground_truth": "Agentic RAG 支持多步推理和工具调用"
+  },
+  {
+    "question": "RAG 评测有哪些指标？",
+    "expected_keywords": ["Hit Rate", "Recall", "MRR", "Faithfulness"],
+    "expected_sources": ["demo_rag_guide.md"],
+    "ground_truth": "包括 Hit Rate、Recall@K、MRR 和 Faithfulness"
+  },
+  {
+    "question": "Transformer 的核心机制是什么？",
+    "expected_keywords": ["自注意力", "Self-Attention", "并行"],
+    "expected_sources": ["demo_deep_learning.md"],
+    "ground_truth": "Transformer 由自注意力机制驱动"
+  },
+  {
+    "question": "本地部署推荐用什么嵌入模型？",
+    "expected_keywords": ["bge-small-zh", "Ollama"],
+    "expected_sources": ["demo_agentic_rag.md"],
+    "ground_truth": "推荐 Ollama + bge-small-zh 嵌入模型"
+  }
+]

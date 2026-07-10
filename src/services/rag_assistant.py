@@ -9,6 +9,9 @@ from langchain_core.prompts import PromptTemplate
 from src.config.settings import Config
 from src.core.vector_store import VectorStore
 from src.core.bm25_retriever import BM25Retriever
+from src.core.hybrid_retriever import HybridRetriever
+from src.core.reranker import rerank_documents
+from src.core.graph_rag import KnowledgeGraph
 from src.models.schemas import ConversationMessage
 
 logger = logging.getLogger(__name__)
@@ -109,6 +112,8 @@ class RAGAssistant:
             )
         
         self.qa_chain: Optional[RetrievalQA] = None
+        self.hybrid_retriever = HybridRetriever(self.vector_store, llm=self.llm if hasattr(self, 'llm') else None)
+        self.knowledge_graph = KnowledgeGraph() if Config.ENABLE_GRAPH_RAG else None
     
     def setup_qa_chain(self, prompt_template: str = None) -> RetrievalQA:
         """设置问答链
@@ -407,152 +412,27 @@ class RAGAssistant:
         result = self.query(question, return_sources=False)
         return result["answer"]
     
-    def retrieve_documents(self, query: str, k: int = None, method: str = 'vector', rerank: bool = False) -> List[Any]:
-        """检索相关文档（不生成答案）
-        
-        Args:
-            query: 查询文本
-            k: 返回文档数量
-            method: 检索方法 ('vector'、'bm25' 或 'hybrid')
-            rerank: 是否使用精排
-            
-        Returns:
-            相关文档列表（已过滤低相似度结果）
-        """
-        # 获取相似度阈值配置
-        similarity_threshold = getattr(Config, 'SIMILARITY_THRESHOLD', None)
-        
-        # 首先尝试基于相似度阈值的过滤
-        try:
-            if similarity_threshold is not None:
-                docs_and_scores = self.vector_store.similarity_search_with_score_filter(
-                    query, k=k, similarity_threshold=similarity_threshold
-                )
-                filtered_docs = [doc for doc, _ in docs_and_scores]
-                
-                # 如果过滤后没有足够相关的文档，返回空列表或标记结果
-                if not filtered_docs:
-                    logger.debug(f"检索到 0 个相似度 >= {similarity_threshold} 的文档")
-                    return []
-                
-                logger.debug(f"检索到 {len(filtered_docs)} 个相似度 >= {similarity_threshold} 的文档")
-                if rerank:
-                    try:
-                        return self.rerank_with_cross_encoder(query, filtered_docs, top_k=k)
-                    except Exception:
-                        return filtered_docs[:k]
-                return filtered_docs[:k]
-        except Exception as e:
-            logger.debug(f"相似度阈值过滤失败: {e}，继续使用标准检索")
-            # 若阈值筛选失败，继续执行标准检索
-            pass
-
+    def retrieve_documents(self, query: str, k: int = None, method: str = None, rerank: bool = None) -> List[Any]:
+        """检索相关文档（不生成答案）"""
         k = k or Config.TOP_K
+        method = method or Config.DEFAULT_RETRIEVAL_METHOD
+        if rerank is None:
+            rerank = Config.ENABLE_RERANK
 
-        # 为 hybrid 准备所有分块（优先从 vectorstore 获取原始 chunks，回退到从磁盘处理）
-        all_chunks = None
-        try:
-            raw_docs = self.vector_store.vectorstore.get() if getattr(self.vector_store, 'vectorstore', None) and hasattr(self.vector_store.vectorstore, 'get') else None
-            if raw_docs:
-                all_chunks = raw_docs
-        except Exception:
-            all_chunks = None
+        result = self.hybrid_retriever.retrieve(query, k=k, method=method, rerank=rerank)
+        docs = result["documents"]
 
-        if all_chunks is None:
-            try:
-                from src.core.document_processor import DocumentProcessor
-                dp = DocumentProcessor()
-                all_chunks = dp.process_documents(Config.DOCUMENTS_PATH)
-            except Exception:
-                all_chunks = None
+        # GraphRAG 上下文增强（将图谱关系注入首个文档 metadata）
+        if self.knowledge_graph and docs:
+            graph_ctx = self.knowledge_graph.search_context(query)
+            if graph_ctx and hasattr(docs[0], "metadata"):
+                docs[0].metadata["graph_context"] = graph_ctx
 
-        if all_chunks is None:
-            # 无法获得 chunks，则降级为仅向量检索（但 hybrid 是默认设计，这里仍尝试向量候选）
-            docs = self.vector_store.similarity_search(query, k=k)
-            if rerank:
-                try:
-                    return self.rerank_with_cross_encoder(query, docs, top_k=k)
-                except Exception:
-                    return docs
-            return docs
-
-        # 修复: 如果 all_chunks 是 raw_docs (dict 格式)，转换为 Document 列表
-        if isinstance(all_chunks, dict) and 'documents' in all_chunks and 'metadatas' in all_chunks:
-            from langchain_core.documents import Document
-            documents_list = all_chunks.get('documents', [])
-            metadatas_list = all_chunks.get('metadatas', [])
-            all_chunks = [
-                Document(
-                    page_content=documents_list[i],
-                    metadata=metadatas_list[i] if i < len(metadatas_list) else {}
-                )
-                for i in range(len(documents_list))
-            ]
-
-        # hybrid: 获取 BM25 与向量候选
-        top_n = max(20, k)
-        bm = BM25Retriever(all_chunks)
-        bm_docs = bm.retrieve(query, k=top_n)
-        vec_docs = self.vector_store.similarity_search(query, k=top_n)
-
-        # 合并去重：优先使用 metadata['chunk_id']，否则使用 page_content 的前 200 字
-        seen = set()
-        merged = []
-
-        def doc_key(d):
-            # 优先 metadata 中的 chunk_id
-            meta = getattr(d, 'metadata', None) if hasattr(d, 'metadata') else (d.get('metadata') if isinstance(d, dict) else None)
-            if isinstance(meta, dict):
-                cid = meta.get('chunk_id') or meta.get('chunk') or meta.get('id')
-                if cid:
-                    return str(cid)
-
-            txt = getattr(d, 'page_content', None) if hasattr(d, 'page_content') else (d.get('page_content') if isinstance(d, dict) else str(d))
-            return (txt or '').strip()[:200]
-
-        for d in bm_docs + vec_docs:
-            kdoc = doc_key(d)
-            if not kdoc or kdoc in seen:
-                continue
-            seen.add(kdoc)
-            merged.append(d)
-
-        if rerank:
-            try:
-                return self.rerank_with_cross_encoder(query, merged, top_k=k)
-            except Exception:
-                return merged[:k]
-
-        return merged[:k]
+        return docs
 
     def rerank_with_cross_encoder(self, query: str, candidates: List[Any], model_name: str = None, top_k: int = None) -> List[Any]:
-        """使用 Cross-encoder 对候选结果进行精排。
-
-        Args:
-            query: 查询文本
-            candidates: 候选文档对象列表（需包含 page_content）
-            model_name: CrossEncoder 模型名称（sentence-transformers）
-            top_k: 返回的 top_k 数量
-
-        Returns:
-            排序后的候选文档列表（按得分降序）
-        """
-        if CrossEncoder is None:
-            raise ImportError("CrossEncoder 未安装，请运行 pip install -U sentence-transformers")
-
-        model_name = model_name or "cross-encoder/ms-marco-MiniLM-L-6-v2"
-        model = CrossEncoder(model_name)
-
-        texts = [(query, getattr(c, 'page_content', '') if hasattr(c, 'page_content') else (c.get('page_content','') if isinstance(c, dict) else str(c))) for c in candidates]
-        scores = model.predict(texts)
-
-        # 将候选与得分配对并按得分降序排序
-        paired = list(zip(scores, candidates))
-        paired.sort(key=lambda x: x[0], reverse=True)
-
-        top_k = top_k or Config.TOP_K
-        ranked = [doc for _, doc in paired[:top_k]]
-        return ranked
+        """使用 Cross-encoder 对候选结果进行精排（兼容旧接口）"""
+        return rerank_documents(query, candidates, top_k=top_k, model_name=model_name or Config.RERANK_MODEL)
     
     def chat(self):
         """交互式对话模式"""

@@ -50,9 +50,16 @@
 ## Core Features
 
 - **Agentic Workflow**: 基于 ReAct 的推理循环，支持规划、工具调用和结果汇总
-- **Hybrid Retrieval**: 向量检索 + BM25 检索，兼顾语义和关键词召回
+- **Hybrid Retrieval + Rerank**: 向量 + BM25 混合检索，bge-reranker-v2-m3 精排
+- **RAG Evaluation**: 内置评测数据集与回测 CLI，对比 vector/bm25/hybrid 策略
+- **GraphRAG**: 轻量知识图谱，支持实体关系抽取与多跳查询
+- **Agent Tracing**: 可视化 ReAct 推理链路，记录工具调用与耗时
+- **MCP Server**: 知识库可作为 MCP 工具接入 Cursor / Claude Desktop
+- **Incremental Index**: 文件哈希跟踪，仅重建变更文档
+- **Local Embedding**: bge-small-zh-v1.5 本地嵌入，支持完全离线部署
+- **JWT Auth**: 可选鉴权，适合团队内部部署
 - **Knowledge Base Management**: 支持文档上传、构建、编辑与删除
-- **Streaming Chat UI**: 支持流式回答、思维过程展示、来源展示和历史会话
+- **Streaming Chat UI**: 支持流式回答、思维过程展示、来源展示（含页码/块索引）和历史会话
 - **Model Flexibility**: 兼容本地模型与云端模型接入
 - **Web Search Ready**: 可选接入 SearXNG / Tavily 等搜索能力
 
@@ -159,6 +166,29 @@ docker compose up -d --build
 4. 构建知识库
 5. 使用 `纯 RAG` 或 `智能模式` 发起提问
 
+### 6. RAG 回测
+
+```bash
+# 构建演示知识库并运行回测
+python run_backtest.py --build
+
+# 仅回测（需已构建知识库）
+python run_backtest.py
+
+# 跳过 Rerank 对比（更快）
+python run_backtest.py --no-rerank
+```
+
+前端也可通过顶部 **📊 评测** 按钮一键回测。
+
+### 7. MCP Server
+
+```bash
+python mcp_server.py
+```
+
+在 Cursor MCP 配置中添加 `agentic-rag` 服务，即可通过 `rag_search` / `graph_query` 工具查询知识库。
+
 ## Configuration
 
 环境变量样例见 `.env.example`。最常用的是：
@@ -204,9 +234,9 @@ docker compose up -d --build
 
 - 更强的首页展示素材：GIF、截图、架构图、对比图
 - 一键部署与 Docker Compose 全链路体验
-- 更清晰的 benchmark / demo 数据集 / 示例问题
+- HuggingFace Spaces 在线 Demo
 - 更稳定的默认配置与新手引导
-- 更聚焦的产品定位，而不是“功能很多但主线不够清楚”
+- 英文 README 国际化
 
 ## Roadmap Direction
 
