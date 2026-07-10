@@ -27,13 +27,25 @@
 
 ## Product Preview
 
-建议在这里逐步补齐对外展示素材：
+### 首页首屏
 
-- 首页首屏：`docs/images/home-hero.png`
-- 知识库构建：`docs/images/kb-build.png`
-- 带来源问答：`docs/images/chat-with-sources.png`
-- 智能模式：`docs/images/agent-mode.png`
-- 文件管理：`docs/images/file-manager.png`
+![Home Hero](docs/images/home-hero.png)
+
+### 知识库构建
+
+![Knowledge Base Build](docs/images/kb-build.png)
+
+### 带来源问答
+
+![Chat With Sources](docs/images/chat-with-sources.png)
+
+### 智能模式
+
+![Agent Mode](docs/images/agent-mode.png)
+
+### 文件管理
+
+![File Manager](docs/images/file-manager.png)
 
 ## Core Features
 
