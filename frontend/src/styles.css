@@ -828,6 +828,29 @@ body::before {
   min-width: 190px;
 }
 
+.hero-secondary-btn {
+  min-width: 132px;
+  border-radius: var(--radius-full) !important;
+  border: 1px solid rgba(148, 163, 184, 0.45) !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  color: #334155 !important;
+  font-weight: 600 !important;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.hero-secondary-btn:hover {
+  border-color: rgba(59, 130, 246, 0.45) !important;
+  color: #1d4ed8 !important;
+  background: rgba(239, 246, 255, 0.95) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.16);
+}
+
+.hero-secondary-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 5px 12px rgba(37, 99, 235, 0.15);
+}
+
 .hero-status-grid {
   width: min(100%, 960px);
   display: grid;
@@ -1468,6 +1491,17 @@ body::before {
   justify-content: center !important;
 }
 
+.upload-file-btn {
+  background: linear-gradient(135deg, #6366f1, #7c3aed) !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
+  box-shadow: 0 10px 22px rgba(99, 102, 241, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.24) !important;
+}
+
+.upload-file-btn .upload-icon {
+  font-size: 20px !important;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.28));
+}
+
 .input-actions .el-button:hover {
   background: linear-gradient(135deg, #a78bfa, #8b5cf6) !important;
   transform: translateY(-3px) scale(1.05) !important;
@@ -1481,6 +1515,11 @@ body::before {
 
 .input-actions .el-button:active {
   transform: translateY(0) !important;
+}
+
+.upload-file-btn:hover {
+  background: linear-gradient(135deg, #7c3aed, #8b5cf6) !important;
+  box-shadow: 0 14px 28px rgba(124, 58, 237, 0.36), 0 0 24px rgba(129, 140, 248, 0.28) !important;
 }
 
 /* Image Preview - Multiple Images Container */
@@ -2652,6 +2691,12 @@ body::before {
   color: white !important;
 }
 
+.dark .upload-file-btn {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  border: 1px solid rgba(199, 210, 254, 0.4) !important;
+  box-shadow: 0 10px 28px rgba(99, 102, 241, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+}
+
 .dark .input-actions .el-button:hover {
   background: linear-gradient(135deg, #a78bfa, #c4b5fd) !important;
   transform: translateY(-3px) scale(1.05) !important;
@@ -2660,6 +2705,11 @@ body::before {
 
 .dark .input-actions .el-button:hover .upload-icon {
   color: white !important;
+}
+
+.dark .upload-file-btn:hover {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa) !important;
+  box-shadow: 0 16px 34px rgba(109, 40, 217, 0.46), 0 0 30px rgba(165, 180, 252, 0.32) !important;
 }
 
 /* Dark Image Preview */
@@ -3148,6 +3198,20 @@ html.dark .el-select-dropdown__item.is-selected.is-hovering {
 
 .dark .empty-state p {
   color: var(--text-secondary);
+}
+
+.dark .hero-secondary-btn {
+  border-color: rgba(129, 140, 248, 0.34) !important;
+  background: rgba(30, 41, 59, 0.82) !important;
+  color: #dbeafe !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.5);
+}
+
+.dark .hero-secondary-btn:hover {
+  border-color: rgba(99, 102, 241, 0.6) !important;
+  background: rgba(49, 46, 129, 0.45) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 26px rgba(99, 102, 241, 0.32);
 }
 
 .dark .empty-icon {

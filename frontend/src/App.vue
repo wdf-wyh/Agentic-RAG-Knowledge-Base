@@ -278,7 +278,7 @@
               <el-button type="primary" class="hero-primary-btn" @click="kbVisible = true">
                 上传并构建知识库
               </el-button>
-              <el-button @click="settingsVisible = true">
+              <el-button class="hero-secondary-btn" @click="settingsVisible = true">
                 配置模型
               </el-button>
             </div>
@@ -491,7 +491,7 @@
                 title="上传文件"
                 class="upload-file-btn"
               >
-                <span class="upload-icon">📎</span>
+                <span class="upload-icon">📁</span>
               </el-button>
               <input
                 ref="imageInput"
