@@ -1,256 +1,255 @@
-# Agentic RAG 知识库系统
+# Agentic RAG Knowledge Base
 
-一个面向本地部署和私有知识管理的 Agentic RAG 项目：支持文档入库、混合检索、对话问答、工具调用和联网搜索。
+<p align="center">
+  <b>把文档变成可对话的知识系统</b><br/>
+  Local-first Agentic RAG for private / on-prem knowledge Q&A
+</p>
 
-> Local-first Agentic Knowledge Base for Chinese teams.
+<p align="center">
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Quick%20Start-5%20min-2ea44f?style=flat-square" alt="Quick Start" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT" /></a>
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vue.js&logoColor=white" alt="Vue 3" />
+  <img src="https://img.shields.io/badge/FastAPI-Async-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/Ollama-Local%20LLM-fff?style=flat-square&logo=ollama&logoColor=black" alt="Ollama" />
+  <img src="https://img.shields.io/badge/MCP-Cursor%20%2F%20Claude-111827?style=flat-square" alt="MCP" />
+</p>
+
+<p align="center">
+  <a href="#english">English</a> ·
+  <a href="START_HERE.md">Start Here</a> ·
+  <a href="QUICKSTART.md">Quickstart</a> ·
+  <a href="docs/ENTERPRISE_DEPLOYMENT.md">Enterprise</a> ·
+  <a href="docs/AGENT_ARCHITECTURE.md">Architecture</a>
+</p>
+
+一个面向**本地部署 / 私有知识管理**的 Agentic RAG 系统：文档入库 → 混合检索 → 带来源问答 → Agent 工具调用 → 可选联网搜索。
+
+适合：想快速搭私有知识库的团队，以及想在 RAG 之上继续做 Agent / 多模型 / 企业能力的开发者。
 
 ![Hero Screenshot](docs/images/home-hero.png)
 
 ![Demo GIF](docs/images/demo.gif)
 
-快速入口：[`Start Here`](START_HERE.md) · [`Quickstart`](QUICKSTART.md) · [`Docker Compose`](#4-docker-compose) · [`Demo Assets`](docs/DEMO_ASSETS_CHECKLIST.md)
+---
 
-这个仓库当前的定位更适合两类人：
+## 为什么不是「又一个 RAG Demo」
 
-- 想快速搭建一个可运行的私有知识库问答系统
-- 想在现有 RAG 工程上继续迭代 Agent、工具调用和多模型接入能力
+| 常见 RAG 项目 | 本项目 |
+| --- | --- |
+| 检索 → 一次生成回答 | **RAG + ReAct Agent**，可规划、调工具、多步推理 |
+| 只有向量检索 | **向量 + BM25 混合检索 + Rerank** |
+| 脚本级 PoC | **Vue 3 完整前端**：流式对话、来源、历史、文件管理 |
+| 绑定单一云厂商 | **Ollama / DeepSeek / OpenAI / Gemini** 可切换 |
+| 难二次开发 | **FastAPI + MCP Server**，可接入 Cursor / Claude Desktop |
+| 无评测 | **内置 RAG 回测**（vector / bm25 / hybrid） |
+| 难上生产 | **多租户、JWT/OIDC、审计、配额、Prometheus/Grafana** |
 
-## Why This Project
+---
 
-很多知识库项目只能“检索然后回答”，而这个项目已经具备继续进化成产品的几个关键基础：
+## 核心能力
 
-- `RAG + Agent` 双模式，既能做纯知识库问答，也能做多步骤推理
-- `FastAPI + Vue 3` 前后端分离，便于二次开发
-- `Ollama / DeepSeek / OpenAI / Gemini` 多模型接入思路
-- 文档上传、知识库构建、会话历史、文件管理等基本产品能力
-- 为联网搜索、图像/视频生成、文件处理等工具扩展预留了结构
+- **Agentic Workflow** — ReAct 推理循环：规划 → 工具调用 → 汇总
+- **Hybrid Retrieval + Rerank** — ChromaDB + BM25，bge-reranker-v2-m3 精排
+- **GraphRAG** — 轻量知识图谱，实体关系与多跳查询
+- **Streaming Chat UI** — 流式回答、思维过程、来源（页码 / chunk）
+- **Local Embedding** — bge-small-zh-v1.5，可完全离线
+- **Incremental Index** — 文件哈希增量重建
+- **MCP Server** — `rag_search` / `graph_query` 接入 IDE Agent
+- **RAG Evaluation** — CLI + 前端一键回测
+- **Enterprise Ops** — 多租户、审计、配额、Webhook、PII/ABAC、数据保留、合规导出、监控告警
+- **Web Search Ready** — 可选 SearXNG / Tavily
 
-## Product Preview
+---
 
-### 首页首屏
+## 产品预览
 
-![Home Hero](docs/images/home-hero.png)
+| 首页 | 知识库构建 |
+| :---: | :---: |
+| ![Home](docs/images/home-hero.png) | ![KB](docs/images/kb-build.png) |
 
-### 知识库构建
-
-![Knowledge Base Build](docs/images/kb-build.png)
-
-### 带来源问答
-
-![Chat With Sources](docs/images/chat-with-sources.png)
-
-### 智能模式
-
-![Agent Mode](docs/images/agent-mode.png)
-
-### 文件管理
+| 带来源问答 | 智能 Agent |
+| :---: | :---: |
+| ![Chat](docs/images/chat-with-sources.png) | ![Agent](docs/images/agent-mode.png) |
 
 ![File Manager](docs/images/file-manager.png)
 
-## Core Features
-
-- **Agentic Workflow**: 基于 ReAct 的推理循环，支持规划、工具调用和结果汇总
-- **Hybrid Retrieval + Rerank**: 向量 + BM25 混合检索，bge-reranker-v2-m3 精排
-- **RAG Evaluation**: 内置评测数据集与回测 CLI，对比 vector/bm25/hybrid 策略
-- **GraphRAG**: 轻量知识图谱，支持实体关系抽取与多跳查询
-- **Agent Tracing**: 可视化 ReAct 推理链路，记录工具调用与耗时
-- **MCP Server**: 知识库可作为 MCP 工具接入 Cursor / Claude Desktop
-- **Incremental Index**: 文件哈希跟踪，仅重建变更文档
-- **Local Embedding**: bge-small-zh-v1.5 本地嵌入，支持完全离线部署
-- **JWT Auth**: 可选鉴权，适合团队内部部署
-- **Knowledge Base Management**: 支持文档上传、构建、编辑与删除
-- **Streaming Chat UI**: 支持流式回答、思维过程展示、来源展示（含页码/块索引）和历史会话
-- **Model Flexibility**: 兼容本地模型与云端模型接入
-- **Web Search Ready**: 可选接入 SearXNG / Tavily 等搜索能力
+---
 
 ## Tech Stack
 
-- Backend: `FastAPI`
-- Frontend: `Vue 3` + `Vite` + `Element Plus`
-- Retrieval: `ChromaDB` + `BM25`
-- LLM Access: `Ollama` / `DeepSeek` / `OpenAI` / `Gemini`
+```text
+Frontend   Vue 3 · Vite · Element Plus
+Backend    FastAPI · JWT / OIDC
+Retrieval  ChromaDB · BM25 · Reranker · GraphRAG
+LLM        Ollama · DeepSeek · OpenAI · Gemini
+Ops        Docker Compose · Prometheus · Grafana · MCP
+```
 
-## Project Structure
+## 架构一览
 
 ```text
-.
-├── src/
-│   ├── agent/        # Agent 核心、工具注册、意图路由
-│   ├── api/          # FastAPI 路由与应用入口
-│   ├── core/         # 向量库、检索器、文档处理
-│   ├── services/     # LLM 客户端、会话管理、RAG 服务
-│   ├── config/       # 配置项
-│   └── utils/        # 日志、监控、重试等通用能力
-├── frontend/         # Vue 前端
-├── deploy/           # Docker / SearXNG 等部署配置
-├── docs/             # 补充文档
-├── documents/        # 默认知识源目录
-└── vector_db/        # 向量库持久化目录
+┌─────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│  Vue 3 UI   │────▶│  FastAPI + Agent     │────▶│  LLM Providers  │
+│  Chat/KB/   │ SSE │  ReAct · Tools · MCP │     │  Ollama/Cloud   │
+│  Eval/Admin │◀────│                      │◀────│                 │
+└─────────────┘     └──────────┬───────────┘     └─────────────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │ Hybrid Retriever     │
+                    │ Vector + BM25 + Graph│
+                    │ + Incremental Index  │
+                    └──────────────────────┘
 ```
+
+---
 
 ## Quick Start
 
-### 1. Prepare Environment
+### 环境要求
 
-建议环境：
+- Python **3.10+**
+- Node.js **18+**
+- 可选：[Ollama](https://ollama.com)（本地模型）
 
-- Python `3.10+`
-- Node.js `18+`
-- 可选：`Ollama`
-
-安装依赖并配置环境变量：
+### 1. 安装与配置
 
 ```bash
 pip install -r requirements.txt
-cd frontend && npm install
+cd frontend && npm install && cd ..
 cp .env.example .env
 ```
 
-至少配置一种模型来源：
+在 `.env` 中至少配置一种模型：
 
-- 本地：`MODEL_PROVIDER=ollama`
-- 云端：`MODEL_PROVIDER=deepseek` 或 `openai` 或 `gemini`
+| 模式 | 关键配置 |
+| --- | --- |
+| 本地 | `MODEL_PROVIDER=ollama` |
+| 云端 | `MODEL_PROVIDER=deepseek` / `openai` / `gemini` + 对应 API Key |
 
-### 2. Start With One Command
+### 2. 一键启动
 
-#### Windows
+**Windows**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start.ps1
+# 或双击 start.bat
 ```
 
-#### macOS / Linux
+**macOS / Linux**
 
 ```bash
 bash start.sh
 ```
 
-### 3. Start Manually
+**手动启动**
 
 ```bash
-# terminal 1
-python run_api.py
-
-# terminal 2
-cd frontend
-npm run dev
+python run_api.py          # API  → http://localhost:8000
+cd frontend && npm run dev # UI   → http://localhost:5173
 ```
 
-默认地址：
-
-- API: `http://localhost:8000`
-- Swagger: `http://localhost:8000/docs`
-
-默认地址：
-
-- Web UI: `http://localhost:5173`
-- API Docs: `http://localhost:8000/docs`
-
-### 4. Docker Compose
+**Docker Compose**
 
 ```bash
 cp .env.example .env
 docker compose up -d --build
+# Web → http://localhost
 ```
 
-默认地址：
+### 3. 第一次使用
 
-- Web UI: `http://localhost`
-- API Docs: `http://localhost:8000/docs`
+1. 打开前端 → **设置** 选择模型提供者  
+2. 上传 `md / pdf / docx / txt`  
+3. **构建知识库**  
+4. 用「纯 RAG」或「智能模式」提问  
 
-### 5. First Run Flow
-
-1. 打开前端页面
-2. 在“设置”中选择模型提供者
-3. 上传 `md / pdf / docx / txt` 文档
-4. 构建知识库
-5. 使用 `纯 RAG` 或 `智能模式` 发起提问
-
-### 6. RAG 回测
+### 4. 进阶
 
 ```bash
-# 构建演示知识库并运行回测
+# RAG 回测
 python run_backtest.py --build
 
-# 仅回测（需已构建知识库）
-python run_backtest.py
-
-# 跳过 Rerank 对比（更快）
-python run_backtest.py --no-rerank
-```
-
-前端也可通过顶部 **📊 评测** 按钮一键回测。
-
-### 7. MCP Server
-
-```bash
+# MCP（Cursor / Claude Desktop）
 python mcp_server.py
 ```
 
-在 Cursor MCP 配置中添加 `agentic-rag` 服务，即可通过 `rag_search` / `graph_query` 工具查询知识库。
+---
 
-## Configuration
+## 项目结构
 
-环境变量样例见 `.env.example`。最常用的是：
+```text
+.
+├── src/
+│   ├── agent/        # Agent、工具、意图路由
+│   ├── api/          # FastAPI 路由
+│   ├── core/         # 向量库、检索、文档处理
+│   ├── services/     # LLM、会话、RAG
+│   ├── config/       # 配置
+│   └── utils/        # 日志、监控、重试
+├── frontend/         # Vue 3 前端
+├── deploy/           # Docker / 监控 / SearXNG
+├── docs/             # 文档与截图
+├── documents/        # 默认知识源
+└── vector_db/        # 向量持久化
+```
 
-- `MODEL_PROVIDER`
-- `DEEPSEEK_API_KEY`
-- `OLLAMA_MODEL`
-- `OLLAMA_API_URL`
-- `VECTOR_DB_PATH`
-- `TOP_K`
-- `MAX_TOKENS`
+## 常用配置
 
-如果你使用联网搜索，还需要按需配置：
+详见 [`.env.example`](.env.example)：
 
-- `TAVILY_API_KEY`
+- `MODEL_PROVIDER` / `DEEPSEEK_API_KEY` / `OLLAMA_MODEL` / `OLLAMA_API_URL`
+- `VECTOR_DB_PATH` / `TOP_K` / `MAX_TOKENS`
+- 联网搜索：`TAVILY_API_KEY`
 
-## Current Product Surface
+## 文档
 
-当前前端已经提供以下能力：
+| 文档 | 说明 |
+| --- | --- |
+| [Start Here](START_HERE.md) | 最短上手路径 |
+| [Quickstart](QUICKSTART.md) | 快速开始 |
+| [Agent 架构](docs/AGENT_ARCHITECTURE.md) | ReAct / 工具路由 |
+| [企业部署](docs/ENTERPRISE_DEPLOYMENT.md) | 多租户与运维 |
+| [Demo 素材清单](docs/DEMO_ASSETS_CHECKLIST.md) | 截图 / GIF |
+| [日志排查](LOG_QUICK_GUIDE.md) | 排障 |
 
-- 聊天问答
-- 历史会话管理
-- 文档上传与知识库构建
-- 文档文件管理与在线编辑
-- 模型提供者切换
-- 深色模式
+---
 
-这意味着本项目已经不只是“RAG 脚本”，而是一个可以继续打磨成完整产品的雏形。
+<a id="english"></a>
 
-## Documentation
+## English
 
-- [Start Here](START_HERE.md)
-- [Quickstart](QUICKSTART.md)
-- [Demo Assets Checklist](docs/DEMO_ASSETS_CHECKLIST.md)
-- [性能优化](docs/PERFORMANCE_OPTIMIZATION.md)
-- [Agent 架构说明](docs/AGENT_ARCHITECTURE.md)
-- [SearXNG 配置](docs/SEARXNG_SETUP.md)
-- [日志排查](LOG_QUICK_GUIDE.md)
+**Agentic RAG Knowledge Base** is a local-first knowledge Q&A system for private deployments:
 
-## Product Gaps To Improve
+- Hybrid retrieval (vector + BM25) with reranking  
+- ReAct agent with tool calling and optional web search  
+- Vue 3 streaming chat UI with citations and history  
+- Multi-provider LLMs: Ollama, DeepSeek, OpenAI, Gemini  
+- MCP server for Cursor / Claude Desktop  
+- Built-in RAG evaluation and enterprise ops hooks  
 
-如果你的目标是把它打造成更有传播力、更容易涨星的开源项目，接下来最值得投入的是：
+```bash
+pip install -r requirements.txt
+cd frontend && npm install && cd ..
+cp .env.example .env
+# set MODEL_PROVIDER + API key (or Ollama)
+bash start.sh   # or start.ps1 / start.bat on Windows
+```
 
-- 更强的首页展示素材：GIF、截图、架构图、对比图
-- 一键部署与 Docker Compose 全链路体验
-- HuggingFace Spaces 在线 Demo
-- 更稳定的默认配置与新手引导
-- 英文 README 国际化
+Open `http://localhost:5173`, upload documents, build the index, and chat.
 
-## Roadmap Direction
+---
 
-一个更容易获得社区关注的方向是把项目重新聚焦为：
+## Roadmap
 
-> **Local-first Agentic Knowledge Base for Chinese teams**
+- 更稳的默认配置与新手引导  
+- HuggingFace Spaces / 在线 Demo  
+- 更完整的英文文档与示例知识库  
+- Agent 工具生态与插件市场  
 
-也就是：
-
-- 优先本地 / 私有化部署
-- 优先中文知识库体验
-- 优先 Agent + RAG 的实际落地，而不是论文式堆概念
+欢迎 Star / Issue / PR。如果你在私有化或中文知识库场景落地了，也欢迎分享反馈。
 
 ## License
 
-MIT
-
+[MIT](LICENSE)
