@@ -36,6 +36,17 @@ uploads/
 # 日志
 *.log
 
+# 运行时数据 / 本地产物（勿提交）
+conversations/
+data/traces/
+data/eval_reports/
+data/knowledge_graph.json
+data/index_manifest.json/
+data/index_manifest.json
+
+# 测试缓存
+.pytest_cache/
+
 frontend/node_modules/
 frontend/node_modules/.vite/
 frontend/build/

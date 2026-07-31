@@ -1,0 +1,20 @@
+groups:
+  - name: rag-enterprise-alerts
+    rules:
+      - alert: RagHighErrorRate
+        expr: (sum(rag_tenant_errors_total) / sum(rag_tenant_requests_total)) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAG service error rate is high"
+          description: "Error rate has been above 5% for 5 minutes."
+
+      - alert: RagHighP95Latency
+        expr: max(rag_tenant_p95_latency_ms) > 3000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAG tenant latency is high"
+          description: "At least one tenant has P95 latency above 3000ms for 10 minutes."

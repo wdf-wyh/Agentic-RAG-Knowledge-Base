@@ -10,11 +10,11 @@ if (-not (Test-Path (Join-Path $root ".env"))) {
 }
 
 Write-Host "[2/3] Starting backend..."
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$root'; python run_api.py"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$root'; `$env:API_PORT='8002'; python run_api.py"
 
 Write-Host "[3/3] Starting frontend..."
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$frontend'; npm run dev"
 
 Write-Host ""
-Write-Host "Frontend: http://localhost:5173"
-Write-Host "Backend Docs: http://localhost:8000/docs"
+Write-Host "Frontend: http://localhost:5175"
+Write-Host "Backend Docs: http://localhost:8002/docs"

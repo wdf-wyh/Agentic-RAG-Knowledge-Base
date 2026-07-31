@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from src.config.settings import Config
 from src.core.document_processor import DocumentProcessor
+from src.utils.tenant_paths import tenant_scoped_path
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +15,8 @@ logger = logging.getLogger(__name__)
 class IncrementalIndexer:
     """跟踪文件哈希，支持增量构建"""
 
-    def __init__(self, manifest_path: Optional[str] = None):
-        self.manifest_path = Path(manifest_path or Config.INDEX_MANIFEST_PATH)
+    def __init__(self, manifest_path: Optional[str] = None, tenant_id: Optional[str] = None):
+        self.manifest_path = Path(manifest_path or tenant_scoped_path(Config.INDEX_MANIFEST_PATH, tenant_id))
         self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
         self.manifest: Dict[str, Dict[str, Any]] = {}
         self._load()

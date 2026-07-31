@@ -15,6 +15,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.11-slim}
     container_name: rag-api
     restart: unless-stopped
     env_file:
@@ -31,6 +33,13 @@ services:
       - ./logs:/app/logs                 # 日志文件
       - ./conversations:/app/conversations  # 对话历史
       - ./memory:/app/memory             # Agent 记忆
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    pids_limit: 256
     networks:
       - rag-network
     healthcheck:
@@ -53,11 +62,71 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
     networks:
       - rag-network
     # volumes:
     #   - ./frontend/nginx.conf:/etc/nginx/nginx.conf:ro   # 热更新 nginx 配置
     #   - /etc/nginx/ssl:/etc/nginx/ssl:ro                 # SSL 证书（HTTPS 时使用）
+
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.54.1}
+    container_name: rag-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - rag-network
+
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.27.0}
+    container_name: rag-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - rag-network
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:11.1.0}
+    container_name: rag-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - alertmanager
+    volumes:
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - rag-network
 
   # -------- Ollama 本地 LLM（可选）--------
   # 如果使用云端 API（DeepSeek/OpenAI/Gemini），注释掉此服务

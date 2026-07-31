@@ -90,11 +90,11 @@ class DocumentProcessor:
                 raise ValueError(f"不支持的文件格式: {file_extension}")
             
             documents = loader.load()
-            print(f"✓ 加载文档: {file_path} ({len(documents)} 页)")
+            print(f"[ok] 加载文档: {file_path} ({len(documents)} 页)")
             return documents
             
         except Exception as e:
-            print(f"✗ 加载文档失败 {file_path}: {str(e)}")
+            print(f"[error] 加载文档失败 {file_path}: {str(e)}")
             return []
     
     def load_documents_from_directory(self, directory_path: str) -> List[Any]:

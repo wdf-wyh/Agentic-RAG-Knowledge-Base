@@ -28,6 +28,10 @@
 
 适合：想快速搭私有知识库的团队，以及想在 RAG 之上继续做 Agent / 多模型 / 企业能力的开发者。
 
+<p align="center">
+  <img src="docs/images/login-hero.png" alt="Login" width="720" />
+</p>
+
 ![Hero Screenshot](docs/images/home-hero.png)
 
 ![Demo GIF](docs/images/demo.gif)
@@ -65,15 +69,21 @@
 
 ## 产品预览
 
-| 首页 | 知识库构建 |
+| 登录页 | 首页工作台 |
 | :---: | :---: |
-| ![Home](docs/images/home-hero.png) | ![KB](docs/images/kb-build.png) |
+| ![Login](docs/images/login-hero.png) | ![Home](docs/images/home-hero.png) |
+
+| 知识库构建 | 文件管理 |
+| :---: | :---: |
+| ![KB](docs/images/kb-build.png) | ![Files](docs/images/file-manager.png) |
 
 | 带来源问答 | 智能 Agent |
 | :---: | :---: |
 | ![Chat](docs/images/chat-with-sources.png) | ![Agent](docs/images/agent-mode.png) |
 
-![File Manager](docs/images/file-manager.png)
+| 设置 |
+| :---: |
+| ![Settings](docs/images/settings.png) |
 
 ---
 

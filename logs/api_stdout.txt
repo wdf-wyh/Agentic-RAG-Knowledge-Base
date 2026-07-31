@@ -1,0 +1,50 @@
+[ok] 日志系统已初始化，日志文件: E:\工程迁移\工程\Agentic-RAG-Knowledge-Base\logs\backend.log
+[start] RAG API server
+   URL: http://0.0.0.0:8000
+   Docs: http://0.0.0.0:8000/docs
+   Log: logs/backend.log
+2026-07-31 03:18:21,972 - api - INFO - API 服务启动 - 0.0.0.0:8000
+INFO:     127.0.0.1:49702 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49702 - "GET /api/admin/retention HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49702 - "POST /api/admin/retention/cleanup HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49702 - "GET /api/admin/compliance-export HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63628 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49674 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53512 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59616 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54600 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50252 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65322 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50933 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60481 - "GET /api/v1/auth/me HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55236 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63485 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53228 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65497 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62024 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59445 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63554 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60201 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63321 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63434 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63823 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57378 - "POST /api/v1/auth/login HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60370 - "POST /api/v1/auth/login HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55622 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50873 - "POST /api/v1/auth/login HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50741 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54337 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49723 - "GET /api/health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49723 - "POST /api/v1/auth/login HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56436 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61042 - "GET /api/docs HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:61042 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61042 - "GET /api/health HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56409 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57050 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56693 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52449 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49673 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56936 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65317 - "GET /internal/metrics-prometheus HTTP/1.1" 200 OK

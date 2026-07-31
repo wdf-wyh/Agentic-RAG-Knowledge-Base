@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
@@ -12,8 +13,10 @@ from src.api.eval_routes import router as eval_router
 from src.api.trace_routes import router as trace_router
 from src.api.graph_routes import router as graph_router
 from src.api.auth_routes import router as auth_router
+from src.middleware.request_context import RequestContextMiddleware
 from src.plugins.base import load_plugins
 from src.utils.logger import setup_logging
+from src.utils.tenant_monitoring import tenant_monitor
 
 
 # 在应用启动时配置日志
@@ -45,9 +48,9 @@ def configure_logging():
             file_handler.setLevel(logging.INFO)
             file_handler.setFormatter(formatter)
             root_logger.addHandler(file_handler)
-            print(f"✓ 日志系统已初始化，日志文件: {backend_log}")
+            print(f"[ok] 日志系统已初始化，日志文件: {backend_log}")
         except Exception as e:
-            print(f"⚠️ 无法创建日志文件: {e}")
+            print(f"[warn] 无法创建日志文件: {e}")
 
 
 def create_app() -> FastAPI:
@@ -62,6 +65,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc"
     )
+    app.add_middleware(RequestContextMiddleware)
     
     # 配置 CORS 中间件
     # 从环境变量读取允许的来源，默认仅允许本地开发
@@ -119,6 +123,11 @@ def create_app() -> FastAPI:
     async def health_check():
         """Docker / 负载均衡健康检查端点"""
         return {"status": "ok"}
+
+    @app.get("/internal/metrics-prometheus", response_class=PlainTextResponse)
+    async def internal_metrics_prometheus():
+        """供内网 Prometheus 抓取的只读指标端点。"""
+        return tenant_monitor.to_prometheus()
 
     return app
 

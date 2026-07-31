@@ -86,15 +86,15 @@ class BaseAgent(ABC):
 {tools_description}
 
 【核心原则 - 必须严格遵守】
-1. **首先检查历史对话**：如果用户问题涉及之前的对话内容（如"我刚才问了什么"、"上一个问题"等），直接从【历史对话上下文】中查找答案，不要使用任何工具
+1. **仅当历史对话非空且问题明确指代先前内容时**，才可直接从【历史对话上下文】回答；若历史为空/无历史对话，禁止声称基于历史回答，也禁止标注「来源: 对话历史」
 2. **实时信息必须重新查询**：对于天气、新闻、股价等实时信息，即使历史对话中有答案，也必须重新执行 web_search 获取最新数据
 3. 对于知识查询问题，优先使用 rag_search 工具查询本地知识库
-4. 回答必须且只能基于工具返回的实际结果或历史对话，绝对禁止使用你自己的知识或常识
+4. 回答必须且只能基于工具返回的实际结果或（有内容时的）历史对话，绝对禁止使用你自己的知识或常识
 5. 如果检索结果中没有相关信息，必须明确告知用户"知识库中没有找到相关信息"
 6. 绝对禁止编造任何内容，包括来源名称、URL、数据等
 
 【来源引用规则 - 极其重要】
-1. 如果回答来自历史对话，标注"来源: 对话历史"
+1. 仅当确实依据先前轮次回答时，才可标注"来源: 对话历史"；首轮或无历史时禁止使用
 2. 如果使用了 web_search，必须在回答中附上工具返回的真实 URL 链接
 3. 如果使用了 rag_search，必须标明来源文件名（从 Observation 中获取）
 4. 绝对禁止编造来源名称，如"XX词典"、"XX论坛"等虚假来源
@@ -102,17 +102,18 @@ class BaseAgent(ABC):
 
 【重要规则】
 1. 你必须严格按照 Thought -> Action -> Observation 的格式输出
-2. 如果问题涉及历史对话，无需使用工具，直接输出 Final Answer
+2. 仅当历史非空且问题涉及历史对话时，无需使用工具，直接输出 Final Answer
 3. 每次只能执行一个 Action
 4. 根据 Observation 结果决定下一步行动
 5. 只有当 Observation 中明确包含答案时，才输出 Final Answer
 6. 如果遇到错误，尝试换一种方法
 7. **即使历史对话中显示之前查询失败，也要重新执行工具调用获取最新信息**
-8. **对于天气、新闻等实时信息，必须使用 web_search 而不是 rag_search**
+8. **对于天气、新闻等实时信息，必须使用 web_search 或 weather 工具，而不是 rag_search**
 9. **每次查询都是独立的，不要因为历史中有负面结果就直接回答失败**
+10. **查询天气时必须有明确城市/地区**：若用户只说「今天天气」「天气怎么样」等未指明地点，禁止调用 weather，禁止默认任何城市（尤其不要默认北京），必须直接追问；仅当用户本轮或历史对话中已明确给出地点后再调用 weather，且 city 必须与用户说过的地点一致
 
 【输出格式】
-Thought: [你的思考过程，首先检查是否能从历史对话中找到答案]
+Thought: [你的思考过程；仅在有先验历史时才检查历史对话]
 Action: [工具名称]
 Action Input: {{"param1": "value1", "param2": "value2"}}
 
@@ -122,7 +123,11 @@ Observation: [工具返回的结果]
 Thought: [根据观察结果的进一步思考，必须分析 Observation 是否包含答案]
 ...
 
-当能从历史对话中直接回答时：
+当用户问天气但未说明地点时：
+Thought: 用户没有说明要查询哪个城市的天气，我需要先追问地点，不能默认城市
+Final Answer: 请问您想查询哪个城市或地区的天气？例如：广州、上海、深圳等。
+
+当能从历史对话中直接回答时（历史必须非空）：
 Thought: 这个问题涉及历史对话，我可以从【历史对话上下文】中直接找到答案
 Final Answer: [基于历史对话的答案]
 来源: 对话历史
@@ -139,7 +144,7 @@ Final Answer: 抱歉，未能找到关于这个问题的相关信息。
 【当前任务】
 用户问题: {question}
 
-请开始推理（记住：优先检查历史对话，答案和来源必须完全来自历史对话或工具返回的 Observation，禁止编造）："""
+请开始推理（记住：无先验历史时不要引用对话历史；答案和来源必须完全来自历史对话或工具返回的 Observation，禁止编造）："""
 
     REFLECTION_PROMPT = """请反思以下回答的质量：
 
@@ -225,7 +230,7 @@ Step 2: [具体行动]
         """
         self.tools[tool.name] = tool
         if self.config.verbose:
-            print(f"✓ 注册工具: {tool.name}")
+            print(f"[ok] 注册工具: {tool.name}")
     
     def get_tools_description(self) -> str:
         """获取所有工具的描述"""
@@ -305,6 +310,27 @@ Step 2: [具体行动]
         
         return (None, None)
     
+    def _validate_weather_city(self, action_input: Dict) -> Optional[str]:
+        """天气工具硬校验：city 必须出现在用户问题或历史对话中。"""
+        city = str((action_input or {}).get("city") or "").strip()
+        if not city:
+            return "缺少城市参数。请先询问用户要查询哪个城市/地区的天气，不要默认任何城市。"
+
+        context = f"{getattr(self, '_current_question', '')}\n{getattr(self, '_current_chat_history', '')}"
+        try:
+            from src.agent.tools.weather_tools import WeatherTool
+            allowed = WeatherTool.is_city_in_context(city, context)
+        except Exception:
+            # 兜底：至少要求 city 原文出现在上下文中
+            allowed = city in context or city.lower() in context.lower()
+
+        if not allowed:
+            return (
+                f"用户未提及城市「{city}」，禁止猜测或默认城市。"
+                "请不要再次调用 weather，直接用 Final Answer 追问用户要查询哪个城市/地区的天气。"
+            )
+        return None
+
     def _execute_action(self, action_name: str, action_input: Dict) -> tuple:
         """执行工具动作
         
@@ -318,6 +344,12 @@ Step 2: [具体行动]
         if action_name not in self.tools:
             error_msg = f"错误: 未知工具 '{action_name}'，可用工具: {list(self.tools.keys())}"
             return (error_msg, {"error": error_msg})
+
+        if action_name == "weather":
+            weather_error = self._validate_weather_city(action_input or {})
+            if weather_error:
+                logger.warning(f"[Agent] 拦截天气查询: {weather_error}")
+                return (f"工具执行失败: {weather_error}", {"error": weather_error, "success": False})
         
         tool = self.tools[action_name]
         try:
@@ -419,6 +451,8 @@ Step 2: [具体行动]
         
         self.state = AgentState.THINKING
         self.thought_history = []
+        self._current_question = question or ""
+        self._current_chat_history = chat_history or ""
         tools_used = []
         
         # 获取当前日期和时间（中国时区）
@@ -516,7 +550,7 @@ Step 2: [具体行动]
                 tools_used.append(action_name)
                 
                 if self.config.verbose:
-                    print(f"👁️ 观察结果: {observation_text[:200]}...")
+                    print(f"[observe] {observation_text[:200]}...")
                 
                 # 更新提示，加入观察结果
                 current_prompt = f"{current_prompt}\n\n{llm_output}\n\nObservation: {observation_text}\n\n请继续推理："
@@ -575,6 +609,8 @@ Step 2: [具体行动]
         
         self.state = AgentState.THINKING
         self.thought_history = []
+        self._current_question = question or ""
+        self._current_chat_history = chat_history or ""
         tools_used = []
         
         # 获取当前日期和时间（中国时区）

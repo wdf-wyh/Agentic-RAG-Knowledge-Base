@@ -55,7 +55,7 @@ def setup_logging(
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
         except Exception as e:
-            print(f"⚠️ 无法创建日志文件 {log_file}: {e}")
+            print(f"[warn] Failed to create log file {log_file}: {e}")
     
     return logger
 

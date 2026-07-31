@@ -8,6 +8,7 @@ from pathlib import Path
 from threading import Lock
 
 from src.models.schemas import ConversationMessage
+from src.utils.tenant_paths import tenant_scoped_path
 
 
 class ConversationManager:
@@ -16,14 +17,14 @@ class ConversationManager:
     线程安全：使用 Lock 保护共享状态
     """
     
-    def __init__(self, storage_path: str = "./conversations"):
+    def __init__(self, storage_path: str = "./conversations", tenant_id: str = None):
         """初始化对话管理器
         
         Args:
             storage_path: 对话历史存储路径
         """
-        self.storage_path = Path(storage_path)
-        self.storage_path.mkdir(exist_ok=True)
+        self.storage_path = Path(tenant_scoped_path(storage_path, tenant_id))
+        self.storage_path.mkdir(parents=True, exist_ok=True)
         
         # 内存中的活跃会话缓存
         self.active_sessions: Dict[str, List[ConversationMessage]] = {}
@@ -40,6 +41,8 @@ class ConversationManager:
         conversation_id = str(uuid.uuid4())
         with self._lock:
             self.active_sessions[conversation_id] = []
+        # 立即落盘，保证历史列表能立刻看到新会话
+        self.save_conversation(conversation_id)
         return conversation_id
     
     def add_message(
@@ -47,7 +50,7 @@ class ConversationManager:
         conversation_id: str, 
         role: str, 
         content: str,
-        save_to_disk: bool = False
+        save_to_disk: bool = True
     ) -> ConversationMessage:
         """添加消息到对话历史
         
@@ -55,7 +58,7 @@ class ConversationManager:
             conversation_id: 会话ID
             role: 消息角色 ('user' 或 'assistant')
             content: 消息内容
-            save_to_disk: 是否立即保存到磁盘
+            save_to_disk: 是否立即保存到磁盘（默认 True，保证历史列表可见）
             
         Returns:
             添加的消息对象

@@ -19,7 +19,8 @@ class WeatherTool(BaseTool):
     def description(self) -> str:
         return (
             "查询指定城市的天气信息，包括温度、湿度、风速、天气描述等。"
-            "支持中文城市名。无需API密钥。"
+            "city 必须来自用户原话或历史对话中已出现的地点；用户未说明地点时禁止调用，"
+            "应直接追问要查哪个城市/地区。支持中文城市名。无需API密钥。禁止默认或猜测城市。"
         )
 
     @property
@@ -32,7 +33,10 @@ class WeatherTool(BaseTool):
             {
                 "name": "city",
                 "type": "string",
-                "description": "城市名称，如 'Beijing'、'Shanghai'、'Tokyo'、'New York'",
+                "description": (
+                    "必填。只能填用户明确说过的城市/地区名，例如用户说「广州天气」则填「广州」。"
+                    "禁止填用户未提及的城市，禁止用示例城市或首都作为默认值。"
+                ),
                 "required": True,
             },
             {
@@ -42,6 +46,36 @@ class WeatherTool(BaseTool):
                 "required": False,
             },
         ]
+
+    @classmethod
+    def city_aliases(cls, city: str) -> List[str]:
+        """返回城市名的中英文别名，用于上下文校验。"""
+        city = (city or "").strip()
+        if not city:
+            return []
+        aliases = {city, city.lower()}
+        for zh, en in cls.CITY_MAP.items():
+            if city == zh or city.lower() == en.lower():
+                aliases.add(zh)
+                aliases.add(en)
+                aliases.add(en.lower())
+        return list(aliases)
+
+    @classmethod
+    def is_city_in_context(cls, city: str, context: str) -> bool:
+        """判断城市是否出现在用户问题或历史对话中。"""
+        if not city or not context:
+            return False
+        context_lower = context.lower()
+        for alias in cls.city_aliases(city):
+            if not alias:
+                continue
+            if alias.lower() == alias:
+                if alias in context_lower:
+                    return True
+            elif alias in context:
+                return True
+        return False
 
     # 城市名中英文映射
     CITY_MAP = {
@@ -79,7 +113,13 @@ class WeatherTool(BaseTool):
     def execute(self, **kwargs) -> ToolResult:
         import requests
 
-        city = kwargs.get("city", "Beijing")
+        city = (kwargs.get("city") or "").strip()
+        if not city:
+            return ToolResult(
+                success=False,
+                output="",
+                error="缺少城市参数。请先询问用户要查询哪个城市/地区的天气，不要默认任何城市。",
+            )
         days = min(int(kwargs.get("days", 1)), 3)
 
         # 映射中文城市名

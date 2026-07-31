@@ -107,11 +107,51 @@ class Config:
     GRAPH_RAG_PATH = os.getenv("GRAPH_RAG_PATH", "./data/knowledge_graph.json")
     INDEX_MANIFEST_PATH = os.getenv("INDEX_MANIFEST_PATH", "./data/index_manifest.json")
     TRACE_STORAGE_PATH = os.getenv("TRACE_STORAGE_PATH", "./data/traces")
+    AUDIT_LOG_PATH = os.getenv("AUDIT_LOG_PATH", "./logs/audit/audit.jsonl")
 
     # JWT 鉴权
     ENABLE_AUTH = os.getenv("ENABLE_AUTH", "false").lower() == "true"
     JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production")
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+    DEFAULT_TENANT_ID = os.getenv("DEFAULT_TENANT_ID", "default")
+    ENABLE_SECURITY_GUARDRAILS = os.getenv("ENABLE_SECURITY_GUARDRAILS", "true").lower() == "true"
+    MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "12000"))
+    ENABLE_PII_REDACTION = os.getenv("ENABLE_PII_REDACTION", "true").lower() == "true"
+    ENABLE_ABAC = os.getenv("ENABLE_ABAC", "true").lower() == "true"
+    EVAL_MIN_HIT_RATE = float(os.getenv("EVAL_MIN_HIT_RATE", "0.6"))
+    EVAL_MIN_GUARDRAIL_PASS_RATE = float(os.getenv("EVAL_MIN_GUARDRAIL_PASS_RATE", "1.0"))
+
+    # OIDC / 企业 SSO
+    ENABLE_OIDC = os.getenv("ENABLE_OIDC", "false").lower() == "true"
+    OIDC_ISSUER = os.getenv("OIDC_ISSUER", "")
+    OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "")
+    OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "")
+    OIDC_REDIRECT_URI = os.getenv("OIDC_REDIRECT_URI", "http://localhost:8000/api/auth/oidc/callback")
+    OIDC_SCOPES = os.getenv("OIDC_SCOPES", "openid profile email")
+    OIDC_ROLE_CLAIM = os.getenv("OIDC_ROLE_CLAIM", "roles")
+    OIDC_TENANT_CLAIM = os.getenv("OIDC_TENANT_CLAIM", "tenant_id")
+    OIDC_FRONTEND_CALLBACK_URL = os.getenv("OIDC_FRONTEND_CALLBACK_URL", "http://localhost:5173/")
+    OIDC_ADMIN_ROLES = [role.strip() for role in os.getenv("OIDC_ADMIN_ROLES", "admin,Administrator").split(",") if role.strip()]
+    OIDC_AUDITOR_ROLES = [role.strip() for role in os.getenv("OIDC_AUDITOR_ROLES", "auditor,Auditor").split(",") if role.strip()]
+
+    # 成本 / 配额治理
+    ENABLE_QUOTA_ENFORCEMENT = os.getenv("ENABLE_QUOTA_ENFORCEMENT", "false").lower() == "true"
+    QUOTA_DAILY_QUERIES = int(os.getenv("QUOTA_DAILY_QUERIES", "1000"))
+    QUOTA_DAILY_TOKENS = int(os.getenv("QUOTA_DAILY_TOKENS", "500000"))
+    QUOTA_DAILY_COST_USD = float(os.getenv("QUOTA_DAILY_COST_USD", "20"))
+
+    # 企业 Webhook
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
+    WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+    WEBHOOK_EVENTS = os.getenv(
+        "WEBHOOK_EVENTS",
+        "auth.login,auth.oidc_login,query.blocked,quota.exceeded,query.completed,build.completed,retention.cleanup,compliance.exported",
+    )
+    WEBHOOK_TIMEOUT_SECONDS = float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "5"))
+
+    # 数据保留 / 合规导出
+    ENABLE_DATA_RETENTION = os.getenv("ENABLE_DATA_RETENTION", "false").lower() == "true"
+    DATA_RETENTION_DAYS = int(os.getenv("DATA_RETENTION_DAYS", "90"))
     
     # 文档目录
     DOCUMENTS_PATH = "./documents"

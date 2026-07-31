@@ -18,11 +18,24 @@ export default defineConfig({
     })
   ],
   server: {
+    port: 5175,
+    strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8002',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '/api')
+        timeout: 0,
+        proxyTimeout: 0,
+        rewrite: (path) => path.replace(/^\/api/, '/api'),
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            const ct = proxyRes.headers['content-type'] || ''
+            if (String(ct).includes('text/event-stream')) {
+              proxyRes.headers['cache-control'] = 'no-cache, no-transform'
+              proxyRes.headers['x-accel-buffering'] = 'no'
+            }
+          })
+        }
       }
     }
   },

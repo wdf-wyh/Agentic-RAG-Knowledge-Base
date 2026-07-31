@@ -29,10 +29,10 @@ def main():
     port = int(os.getenv("API_PORT", "8000"))
     reload = os.getenv("API_RELOAD", "true").lower() == "true"
     
-    print(f"🚀 启动 RAG 知识库 API 服务")
-    print(f"   地址: http://{host}:{port}")
-    print(f"   文档: http://{host}:{port}/docs")
-    print(f"   日志: logs/backend.log")
+    print(f"[start] RAG API server")
+    print(f"   URL: http://{host}:{port}")
+    print(f"   Docs: http://{host}:{port}/docs")
+    print(f"   Log: logs/backend.log")
     
     logger.info(f"API 服务启动 - {host}:{port}")
     

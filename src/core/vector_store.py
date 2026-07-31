@@ -20,6 +20,7 @@ except Exception:
     np = None
 
 from src.config.settings import Config
+from src.utils.tenant_paths import tenant_scoped_path
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +28,13 @@ logger = logging.getLogger(__name__)
 class VectorStore:
     """向量数据库管理器"""
     
-    def __init__(self, persist_directory: str = None):
+    def __init__(self, persist_directory: str = None, tenant_id: str = None):
         """初始化向量数据库
         
         Args:
             persist_directory: 数据库持久化目录
         """
-        self.persist_directory = persist_directory or Config.VECTOR_DB_PATH
+        self.persist_directory = persist_directory or tenant_scoped_path(Config.VECTOR_DB_PATH, tenant_id)
         
         # 初始化 Embedding 模型：根据配置选择实现
         use_local_embeddings = False
@@ -73,7 +74,7 @@ class VectorStore:
                         try:
                             logger.info(f"加载嵌入模型：{model_name} (尝试 {attempt + 1}/{max_retries})")
                             self.model = SentenceTransformer(model_name)
-                            logger.info(f"✓ 嵌入模型加载成功：{model_name}")
+                            logger.info(f"[ok] 嵌入模型加载成功：{model_name}")
                             break
                         except Exception as e:
                             if attempt < max_retries - 1:
@@ -118,7 +119,7 @@ class VectorStore:
             persist_directory=self.persist_directory,
         )
         
-        print(f"✓ 向量数据库创建成功，保存在: {self.persist_directory}")
+        print(f"[ok] 向量数据库创建成功，保存在: {self.persist_directory}")
         return self.vectorstore
     
     def load_vectorstore(self) -> Optional[Chroma]:
@@ -137,7 +138,7 @@ class VectorStore:
             embedding_function=self.embeddings,
         )
         
-        print("✓ 向量数据库加载成功")
+        print("[ok] 向量数据库加载成功")
         return self.vectorstore
     
     def add_documents(self, documents: List[Any]):
@@ -154,7 +155,7 @@ class VectorStore:
         else:
             print(f"添加 {len(documents)} 个文档到向量数据库...")
             self.vectorstore.add_documents(documents)
-            print("✓ 文档添加成功")
+            print("[ok] 文档添加成功")
     
     def similarity_search(self, query: str, k: int = None) -> List[Any]:
         """相似度搜索
@@ -276,7 +277,7 @@ class VectorStore:
         """删除向量数据库集合"""
         if self.vectorstore is not None:
             self.vectorstore.delete_collection()
-            print("✓ 向量数据库已删除")
+            print("[ok] 向量数据库已删除")
     
     def get_document_list(self) -> List[str]:
         """获取知识库中所有文档的列表

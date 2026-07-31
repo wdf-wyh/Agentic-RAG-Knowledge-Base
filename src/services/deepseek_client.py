@@ -90,18 +90,25 @@ def _stream_response(resp) -> Iterator[str]:
                 continue
             # 常见字段：choices -> delta / content，或 response 字段
             if isinstance(chunk, dict):
-                if "delta" in chunk:
-                    # 支持类似 OpenAI streaming 的结构
+                if "choices" in chunk:
+                    for c in chunk.get("choices", []):
+                        if not isinstance(c, dict):
+                            continue
+                        delta = c.get("delta") or {}
+                        txt = (
+                            (delta.get("content") if isinstance(delta, dict) else None)
+                            or c.get("text")
+                            or (c.get("message") or {}).get("content")
+                        )
+                        if txt:
+                            yield txt
+                elif "delta" in chunk:
+                    # 兼容非标准顶层 delta
                     content = chunk.get("delta", {}).get("content")
                     if content:
                         yield content
                 elif "response" in chunk:
                     yield chunk.get("response", "")
-                elif "choices" in chunk:
-                    for c in chunk.get("choices", []):
-                        txt = c.get("text") or c.get("message", {}).get("content")
-                        if txt:
-                            yield txt
                 else:
                     # 未知 JSON 结构，返回字符串化内容
                     yield json.dumps(chunk)

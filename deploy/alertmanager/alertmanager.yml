@@ -1,0 +1,14 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default-receiver
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: default-receiver
+    webhook_configs:
+      - url: http://127.0.0.1:5001/alerts
+        send_resolved: true

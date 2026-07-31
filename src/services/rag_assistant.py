@@ -157,7 +157,7 @@ class RAGAssistant:
                     "prompt": question_prompt,
                 }
             )
-            print("✓ 问答链初始化成功（快速模式）")
+            print("[ok] QA chain initialized (fast mode)")
         else:
             # 标准模式：使用 refine chain（多次调用，精度更高）
             question_prompt = PromptTemplate(
@@ -201,7 +201,7 @@ class RAGAssistant:
                     "document_variable_name": "context",
                 }
             )
-            print("✓ 问答链初始化成功（标准模式）")
+            print("[ok] QA chain initialized (standard mode)")
         
         return self.qa_chain
     
@@ -262,7 +262,7 @@ class RAGAssistant:
         # 优化查询以改进检索
         optimized_question = self.optimize_query(question)
         if optimized_question != question:
-            print(f"✓ 查询优化: '{question}' → '{optimized_question}'")
+            print(f"[ok] Query optimized: '{question}' -> '{optimized_question}'")
 
         print(f"\n问题: {question}")
         print("检索中...")
@@ -380,7 +380,7 @@ class RAGAssistant:
                     })
                 except Exception as e:
                     # 处理异常的文档对象
-                    print(f"⚠️ 处理文档片段时出错: {e}")
+                    print(f"[warn] Failed to process document chunk: {e}")
                     previews.append({
                         'source': '错误处理',
                         'preview': '无法提取内容'

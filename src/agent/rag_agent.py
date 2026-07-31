@@ -241,7 +241,7 @@ class RAGAgent(BaseAgent):
         # 13. 天气工具
         self.register_tool(WeatherTool())
         if self.config.verbose:
-            print(f"\n✓ RAG Agent 初始化完成，共注册 {len(self.tools)} 个工具")
+            print(f"\n[ok] RAG Agent 初始化完成，共注册 {len(self.tools)} 个工具")
 
     def start_conversation(self) -> str:
         """开始新的对话会话
@@ -281,6 +281,46 @@ class RAGAgent(BaseAgent):
         if self._current_conversation_id:
             self._conversation_manager.clear_conversation(self._current_conversation_id)
 
+    @staticmethod
+    def _has_prior_conversation(chat_history: str) -> bool:
+        """判断是否存在可用于回答的先前对话（不含当前用户问题）"""
+        text = (chat_history or "").strip()
+        return bool(text) and text not in ("（无历史对话）", "无历史对话")
+
+    def _load_prior_history_then_save_user(
+        self, question: str, save_to_history: bool = True
+    ) -> str:
+        """先读取先验历史，再写入当前用户消息，避免首轮把当前问题当成「历史」。"""
+        chat_history = ""
+        if self._current_conversation_id:
+            chat_history = self._conversation_manager.format_history_for_llm(
+                self._current_conversation_id,
+                max_turns=5,
+            )
+            if chat_history.strip() == "（无历史对话）":
+                chat_history = ""
+
+        if save_to_history and self._current_conversation_id:
+            self._conversation_manager.add_message(
+                self._current_conversation_id, "user", question
+            )
+        return chat_history
+
+    def _coerce_conversation_intent(self, analysis: IntentAnalysis, chat_history: str):
+        """无先验对话时禁止走 conversation，避免首轮误引用来源: 对话历史。"""
+        if (
+            analysis.intent == IntentType.CONVERSATION
+            and not self._has_prior_conversation(chat_history)
+        ):
+            logger.warning(
+                "[SmartQuery] conversation 意图但无先验对话，改走完整 Agent"
+            )
+            analysis.intent = IntentType.MULTI_STEP
+            analysis.reasoning = (
+                f"{analysis.reasoning}（已纠正：无先验对话，不可引用对话历史）"
+            )
+        return analysis
+
     def smart_query(self, question: str, save_to_history: bool = True) -> AgentResponse:
         """智能查询 - 使用大模型分析问题并决定最佳处理方式
 
@@ -299,19 +339,8 @@ class RAGAgent(BaseAgent):
         import pytz
         from datetime import datetime
         
-        # 保存用户消息到历史
-        if save_to_history and self._current_conversation_id:
-            self._conversation_manager.add_message(
-                self._current_conversation_id, "user", question
-            )
-        
-        # 获取对话历史
-        chat_history = ""
-        if self._current_conversation_id:
-            chat_history = self._conversation_manager.format_history_for_llm(
-                self._current_conversation_id,
-                max_turns=5
-            )
+        # 必须先取先验历史，再保存当前用户消息
+        chat_history = self._load_prior_history_then_save_user(question, save_to_history)
         
         # 获取当前时间
         tz = pytz.timezone('Asia/Shanghai')
@@ -326,6 +355,7 @@ class RAGAgent(BaseAgent):
                 chat_history=chat_history,
                 current_date=current_date
             )
+            analysis = self._coerce_conversation_intent(analysis, chat_history)
             
             if self.config.verbose:
                 print(f"\n🧠 意图分析结果:")
@@ -519,18 +549,8 @@ class RAGAgent(BaseAgent):
         from datetime import datetime
         from src.agent.base import StreamEvent
 
-        # 保存用户消息到历史
-        if save_to_history and self._current_conversation_id:
-            self._conversation_manager.add_message(
-                self._current_conversation_id, "user", question
-            )
-
-        # 获取对话历史
-        chat_history = ""
-        if self._current_conversation_id:
-            chat_history = self._conversation_manager.format_history_for_llm(
-                self._current_conversation_id, max_turns=5
-            )
+        # 必须先取先验历史，再保存当前用户消息
+        chat_history = self._load_prior_history_then_save_user(question, save_to_history)
 
         # 获取当前时间
         tz = pytz.timezone('Asia/Shanghai')
@@ -544,6 +564,7 @@ class RAGAgent(BaseAgent):
                 chat_history=chat_history,
                 current_date=current_date
             )
+            analysis = self._coerce_conversation_intent(analysis, chat_history)
             logger.info(f"[SmartStream] 意图: {analysis.intent.value}, 置信度: {analysis.confidence}")
 
             yield StreamEvent(type='intent', data={
@@ -565,6 +586,9 @@ class RAGAgent(BaseAgent):
                     if token:
                         full_answer += token
                         yield StreamEvent(type='answer_token', data=token)
+                if not full_answer.strip():
+                    full_answer = "模型未返回有效内容，请重试。"
+                    yield StreamEvent(type='answer_token', data=full_answer)
                 yield StreamEvent(type='answer', data=full_answer)
                 yield StreamEvent(type='done', data={'tools_used': [], 'iterations': 1})
                 if save_to_history and self._current_conversation_id and full_answer:
@@ -573,29 +597,35 @@ class RAGAgent(BaseAgent):
                     )
                 return
 
-            # 历史对话意图
+            # 历史对话意图（仅先验历史非空时才会进入，见 _coerce_conversation_intent）
             if analysis.intent == IntentType.CONVERSATION:
-                prompt = (
-                    f"请基于以下历史对话，回答用户的问题。\n\n"
-                    f"【历史对话】\n{chat_history}\n\n"
-                    f"【用户问题】\n{question}\n\n"
-                    f"请直接给出答案，如果历史对话中没有相关信息，请诚实说明。"
-                )
-                yield StreamEvent(type='answer_start')
-                full_answer = ""
-                for chunk in self.llm_streaming.stream(prompt):
-                    token = chunk.content if hasattr(chunk, 'content') else str(chunk)
-                    if token:
-                        full_answer += token
-                        yield StreamEvent(type='answer_token', data=token)
-                final = full_answer + "\n\n来源: 对话历史"
-                yield StreamEvent(type='answer', data=final)
-                yield StreamEvent(type='done', data={'tools_used': [], 'iterations': 1})
-                if save_to_history and self._current_conversation_id and full_answer:
-                    self._conversation_manager.add_message(
-                        self._current_conversation_id, "assistant", final
+                if not self._has_prior_conversation(chat_history):
+                    analysis.intent = IntentType.MULTI_STEP
+                else:
+                    prompt = (
+                        f"请基于以下历史对话，回答用户的问题。\n\n"
+                        f"【历史对话】\n{chat_history}\n\n"
+                        f"【用户问题】\n{question}\n\n"
+                        f"请直接给出答案，如果历史对话中没有相关信息，请诚实说明。"
                     )
-                return
+                    yield StreamEvent(type='answer_start')
+                    full_answer = ""
+                    for chunk in self.llm_streaming.stream(prompt):
+                        token = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                        if token:
+                            full_answer += token
+                            yield StreamEvent(type='answer_token', data=token)
+                    if not full_answer.strip():
+                        full_answer = "模型未返回有效内容，请重试。"
+                        yield StreamEvent(type='answer_token', data=full_answer)
+                    final = full_answer + "\n\n来源: 对话历史"
+                    yield StreamEvent(type='answer', data=final)
+                    yield StreamEvent(type='done', data={'tools_used': [], 'iterations': 1})
+                    if save_to_history and self._current_conversation_id and full_answer:
+                        self._conversation_manager.add_message(
+                            self._current_conversation_id, "assistant", final
+                        )
+                    return
 
             # 图片生成
             if analysis.intent == IntentType.IMAGE_GENERATION:
@@ -775,6 +805,15 @@ class RAGAgent(BaseAgent):
         Returns:
             AgentResponse
         """
+        if not self._has_prior_conversation(chat_history):
+            return AgentResponse(
+                success=False,
+                answer="当前没有可用的历史对话，请直接说明你的问题。",
+                thought_process=[],
+                tools_used=[],
+                iterations=0,
+            )
+
         # 使用大模型从历史对话中生成回答
         prompt = f"""请基于以下历史对话，回答用户的问题。
 
@@ -784,7 +823,7 @@ class RAGAgent(BaseAgent):
 【用户问题】
 {question}
 
-请直接给出答案，如果历史对话中没有相关信息，请诚实说明。"""
+请直接给出答案，如果历史对话中没有相关信息，请诚实说明。不要声称来自历史对话以外的信息。"""
 
         try:
             response = self.llm.invoke(prompt)

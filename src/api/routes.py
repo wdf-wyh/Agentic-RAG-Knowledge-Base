@@ -1,6 +1,6 @@
 """API 路由定义"""
-from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks, Depends, Request
+from fastapi.responses import StreamingResponse, PlainTextResponse, Response
 import json
 import os
 import re
@@ -14,33 +14,58 @@ from typing import Optional
 from pydantic import BaseModel
 
 from src.config.settings import Config
+from src.api.auth import get_current_user
+from src.api.dependencies import get_request_context
+from src.api.permissions import require_roles, require_policy
 from src.core.document_processor import DocumentProcessor
 from src.core.vector_store import VectorStore
 from src.core.incremental_index import IncrementalIndexer
 from src.core.graph_rag import KnowledgeGraph
+from src.models.auth import RequestContext, UserIdentity
+from src.models.audit import AuditEvent
 from src.plugins.base import run_hooks
+from src.services.audit_service import get_audit_service
+from src.services.quota_service import get_quota_service
+from src.services.webhook_service import get_webhook_service
+from src.services.retention_service import get_retention_service
+from src.services.compliance_export_service import get_compliance_export_service
 from src.services.rag_assistant import RAGAssistant
 from src.services.conversation_manager import ConversationManager
 from src.services.ollama_client import generate as ollama_generate, OllamaError
 from src.services.deepseek_client import generate as deepseek_generate, DeepSeekError
+from src.security.guardrails import validate_user_text
+from src.security.pii import sanitize_output_text
+from src.security.abac import get_abac_engine
+from src.utils.monitoring import monitor
+from src.utils.tenant_monitoring import tenant_monitor
 from src.models.schemas import QueryRequest, BuildRequest, ConversationMessage
 
 # 配置日志
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
-# 全局状态管理
-_assistant: Optional[RAGAssistant] = None
-_conversation_manager: Optional[ConversationManager] = None
-_build_progress = {
-    "processing": False,
-    "progress": 0,
-    "total": 0,
-    "current_file": "",
-    "status": "idle"
-}
+# 全局状态管理（按租户隔离）
+_assistants: dict[str, Optional[RAGAssistant]] = {}
+_conversation_managers: dict[str, ConversationManager] = {}
+_build_progress_by_tenant: dict[str, dict] = {}
+
+
+def get_tenant_id(user: Optional[UserIdentity]) -> str:
+    return user.tenant_id if user else Config.DEFAULT_TENANT_ID
+
+
+def get_build_progress(tenant_id: str) -> dict:
+    if tenant_id not in _build_progress_by_tenant:
+        _build_progress_by_tenant[tenant_id] = {
+            "processing": False,
+            "progress": 0,
+            "total": 0,
+            "current_file": "",
+            "status": "idle",
+        }
+    return _build_progress_by_tenant[tenant_id]
 
 
 def format_source(doc) -> dict:
@@ -66,6 +91,33 @@ def format_source(doc) -> dict:
 def generate_trace_id() -> str:
     """生成请求追踪 ID"""
     return str(uuid.uuid4())[:8]
+
+
+def record_audit_event(
+    request: Request,
+    context: RequestContext,
+    action: str,
+    resource: str,
+    user: Optional[UserIdentity],
+    outcome: str = "success",
+    details: Optional[dict] = None,
+):
+    """记录统一审计事件。"""
+    get_audit_service().record(
+        AuditEvent(
+            request_id=context.request_id,
+            actor_id=user.user_id if user else "anonymous",
+            actor_name=user.username if user else "anonymous",
+            tenant_id=user.tenant_id if user else Config.DEFAULT_TENANT_ID,
+            action=action,
+            resource=resource,
+            outcome=outcome,
+            path=request.url.path,
+            method=request.method,
+            client_ip=context.client_ip,
+            details=details or {},
+        )
+    )
 
 
 def parse_llm_json_response(response_text: str) -> str:
@@ -118,43 +170,45 @@ async def stream_text_in_chunks(text: str, chunk_size: int = 20):
     Yields:
         SSE 格式的数据块
     """
-    for i in range(0, len(text), chunk_size):
-        chunk = text[i:i+chunk_size]
+    safe_text = sanitize_output_text(text)
+    for i in range(0, len(safe_text), chunk_size):
+        chunk = safe_text[i:i+chunk_size]
         yield f"data: {json.dumps({'type': 'content', 'data': chunk})}\n\n"
         await asyncio.sleep(0.05)  # 每批等待 50ms，比逐字符更高效
 
 
-def get_conversation_manager() -> ConversationManager:
+def get_conversation_manager(tenant_id: str = Config.DEFAULT_TENANT_ID) -> ConversationManager:
     """获取对话管理器实例"""
-    global _conversation_manager
-    if _conversation_manager is None:
-        _conversation_manager = ConversationManager()
-    return _conversation_manager
+    manager = _conversation_managers.get(tenant_id)
+    if manager is None:
+        manager = ConversationManager(tenant_id=tenant_id)
+        _conversation_managers[tenant_id] = manager
+    return manager
 
 
-def get_assistant() -> Optional[RAGAssistant]:
+def get_assistant(tenant_id: str = Config.DEFAULT_TENANT_ID) -> Optional[RAGAssistant]:
     """获取 RAG 助手实例"""
-    return _assistant
+    return _assistants.get(tenant_id)
 
 
-def set_assistant(assistant: Optional[RAGAssistant]):
+def set_assistant(assistant: Optional[RAGAssistant], tenant_id: str = Config.DEFAULT_TENANT_ID):
     """设置 RAG 助手实例"""
-    global _assistant
-    _assistant = assistant
+    _assistants[tenant_id] = assistant
 
 
-def load_assistant() -> bool:
+def load_assistant(tenant_id: str = Config.DEFAULT_TENANT_ID) -> bool:
     """加载助手"""
-    global _assistant
     try:
         Config.validate()
-        if _assistant is None:
-            vector_store = VectorStore()
+        assistant = _assistants.get(tenant_id)
+        if assistant is None:
+            vector_store = VectorStore(tenant_id=tenant_id)
             vs = vector_store.load_vectorstore()
             if vs is None:
                 return False
-            _assistant = RAGAssistant(vector_store=vector_store)
-            _assistant.setup_qa_chain()
+            assistant = RAGAssistant(vector_store=vector_store)
+            assistant.setup_qa_chain()
+            _assistants[tenant_id] = assistant
         return True
     except Exception as e:
         print("加载助手失败:", e)
@@ -162,14 +216,20 @@ def load_assistant() -> bool:
 
 
 @router.get("/status")
-def status():
+def status(user: Optional[UserIdentity] = Depends(get_current_user)):
     """获取系统状态"""
-    loaded = load_assistant()
-    return {"vector_store_loaded": loaded}
+    tenant_id = get_tenant_id(user)
+    loaded = load_assistant(tenant_id)
+    return {"vector_store_loaded": loaded, "tenant_id": tenant_id}
 
 
-@router.post("/build")
-def build(req: BuildRequest):
+@router.post("/build", dependencies=[Depends(require_roles("admin")), Depends(require_policy("write", "knowledge_base"))])
+def build(
+    req: BuildRequest,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """构建知识库"""
     try:
         # 安全: 验证文档路径在允许范围内
@@ -183,7 +243,8 @@ def build(req: BuildRequest):
         if not chunks:
             return {"success": False, "message": "未找到可处理的文档"}
 
-        vector_store = VectorStore()
+        tenant_id = get_tenant_id(user)
+        vector_store = VectorStore(tenant_id=tenant_id)
         vector_store.create_vectorstore(chunks)
 
         # 构建知识图谱
@@ -197,38 +258,45 @@ def build(req: BuildRequest):
         run_hooks("after_build", chunks)
         
         # 重新加载 assistant
-        global _assistant
-        _assistant = None
-        load_assistant()  # 立即重新加载
+        set_assistant(None, tenant_id)
+        load_assistant(tenant_id)  # 立即重新加载
+        record_audit_event(
+            request,
+            context,
+            action="knowledge_base.build",
+            resource="documents",
+            user=user,
+            details={"documents_path": req.documents_path, "processed_chunks": len(chunks)},
+        )
         return {"success": True, "processed_chunks": len(chunks)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def build_knowledge_base_background(documents_path: str):
+def build_knowledge_base_background(documents_path: str, tenant_id: str):
     """后台构建知识库并更新进度"""
-    global _build_progress, _assistant
+    progress = get_build_progress(tenant_id)
     try:
-        _build_progress["processing"] = True
-        _build_progress["status"] = "reading"
-        _build_progress["current_file"] = "扫描文档..."
-        _build_progress["progress"] = 0
-        _build_progress["total"] = 0
+        progress["processing"] = True
+        progress["status"] = "reading"
+        progress["current_file"] = "扫描文档..."
+        progress["progress"] = 0
+        progress["total"] = 0
         
         processor = DocumentProcessor()
         chunks = processor.process_documents(documents_path)
         
         if not chunks:
-            _build_progress["status"] = "error"
-            _build_progress["current_file"] = "未找到可处理的文档"
-            _build_progress["processing"] = False
+            progress["status"] = "error"
+            progress["current_file"] = "未找到可处理的文档"
+            progress["processing"] = False
             return
         
-        _build_progress["total"] = len(chunks)
-        _build_progress["status"] = "building"
-        _build_progress["current_file"] = "生成向量..."
+        progress["total"] = len(chunks)
+        progress["status"] = "building"
+        progress["current_file"] = "生成向量..."
         
-        vector_store = VectorStore()
+        vector_store = VectorStore(tenant_id=tenant_id)
         
         # 分批添加文档，逐步更新进度（每50个一批）
         batch_size = 50
@@ -239,27 +307,40 @@ def build_knowledge_base_background(documents_path: str):
             else:
                 vector_store.add_documents(batch)
             
-            _build_progress["progress"] = min(i + batch_size, len(chunks))
-            _build_progress["current_file"] = f"已处理 {_build_progress['progress']}/{len(chunks)} 个文档块"
+            progress["progress"] = min(i + batch_size, len(chunks))
+            progress["current_file"] = f"已处理 {progress['progress']}/{len(chunks)} 个文档块"
             time.sleep(0.1)
         
-        # 重新加载 assistant
-        _assistant = None
-        load_assistant()
+        set_assistant(None, tenant_id)
+        load_assistant(tenant_id)
         
-        _build_progress["progress"] = len(chunks)
-        _build_progress["status"] = "completed"
-        _build_progress["current_file"] = "完成"
-        _build_progress["processing"] = False
+        progress["progress"] = len(chunks)
+        progress["status"] = "completed"
+        progress["current_file"] = "完成"
+        progress["processing"] = False
+        try:
+            from src.services.webhook_service import get_webhook_service
+
+            get_webhook_service().emit(
+                "build.completed",
+                {"tenant_id": tenant_id, "processed_chunks": len(chunks), "documents_path": documents_path},
+            )
+        except Exception:
+            pass
         
     except Exception as e:
-        _build_progress["status"] = "error"
-        _build_progress["current_file"] = f"错误: {str(e)}"
-        _build_progress["processing"] = False
+        progress["status"] = "error"
+        progress["current_file"] = f"错误: {str(e)}"
+        progress["processing"] = False
 
 
-@router.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+@router.post("/upload", dependencies=[Depends(require_roles("admin")), Depends(require_policy("write", "knowledge_base"))])
+async def upload_file(
+    request: Request,
+    file: UploadFile = File(...),
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """上传文件到文档目录"""
     MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50MB
     ALLOWED_EXTENSIONS = {".md", ".pdf", ".docx", ".doc", ".txt", ".csv", ".json", ".html", ".htm", ".epub", ".rtf", ".pptx", ".xlsx"}
@@ -291,6 +372,14 @@ async def upload_file(file: UploadFile = File(...)):
         
         with open(file_path, "wb") as f:
             f.write(contents)
+        record_audit_event(
+            request,
+            context,
+            action="knowledge_base.upload",
+            resource=safe_filename,
+            user=user,
+            details={"size": len(contents), "path": str(file_path)},
+        )
         
         return {
             "success": True,
@@ -304,32 +393,39 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/build-incremental")
-async def build_incremental(background_tasks: BackgroundTasks):
+@router.post("/build-incremental", dependencies=[Depends(require_roles("admin")), Depends(require_policy("write", "knowledge_base"))])
+async def build_incremental(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """增量构建知识库（仅处理变更文件）"""
-    if _build_progress["processing"]:
+    tenant_id = get_tenant_id(user)
+    progress = get_build_progress(tenant_id)
+    if progress["processing"]:
         return {"success": False, "message": "已有构建任务进行中"}
 
     def _incremental_task():
-        global _build_progress, _assistant
+        current_progress = get_build_progress(tenant_id)
         try:
-            _build_progress.update({"processing": True, "status": "incremental", "progress": 0})
-            indexer = IncrementalIndexer()
+            current_progress.update({"processing": True, "status": "incremental", "progress": 0})
+            indexer = IncrementalIndexer(tenant_id=tenant_id)
             result = indexer.process_incremental("./documents")
             chunks = result["chunks"]
             if not chunks and not result["deleted_files"]:
-                _build_progress.update({"status": "completed", "current_file": "无变更", "processing": False})
+                current_progress.update({"status": "completed", "current_file": "无变更", "processing": False})
                 return
-            vs = VectorStore()
+            vs = VectorStore(tenant_id=tenant_id)
             if vs.load_vectorstore() is None:
                 vs.create_vectorstore(chunks)
             else:
                 vs.add_documents(chunks)
             if Config.ENABLE_GRAPH_RAG and chunks:
                 KnowledgeGraph().build_from_chunks(chunks)
-            _assistant = None
-            load_assistant()
-            _build_progress.update({
+            set_assistant(None, tenant_id)
+            load_assistant(tenant_id)
+            current_progress.update({
                 "status": "completed",
                 "progress": result["new_chunks"],
                 "total": result["new_chunks"],
@@ -337,62 +433,80 @@ async def build_incremental(background_tasks: BackgroundTasks):
                 "processing": False,
             })
         except Exception as e:
-            _build_progress.update({"status": "error", "current_file": str(e), "processing": False})
+            current_progress.update({"status": "error", "current_file": str(e), "processing": False})
 
     background_tasks.add_task(_incremental_task)
+    record_audit_event(
+        request,
+        context,
+        action="knowledge_base.build_incremental",
+        resource="documents",
+        user=user,
+    )
     return {"success": True, "message": "增量构建已启动"}
 
 
-@router.post("/build-start")
-async def build_start(background_tasks: BackgroundTasks):
+@router.post("/build-start", dependencies=[Depends(require_roles("admin")), Depends(require_policy("write", "knowledge_base"))])
+async def build_start(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """启动后台知识库构建"""
-    if _build_progress["processing"]:
+    tenant_id = get_tenant_id(user)
+    progress = get_build_progress(tenant_id)
+    if progress["processing"]:
         return {"success": False, "message": "已有构建任务进行中"}
     
-    _build_progress["processing"] = True
-    _build_progress["progress"] = 0
-    _build_progress["total"] = 0
-    _build_progress["status"] = "processing"
-    _build_progress["current_file"] = "初始化..."
+    progress["processing"] = True
+    progress["progress"] = 0
+    progress["total"] = 0
+    progress["status"] = "processing"
+    progress["current_file"] = "初始化..."
     
-    background_tasks.add_task(build_knowledge_base_background, "./documents")
+    background_tasks.add_task(build_knowledge_base_background, "./documents", tenant_id)
+    record_audit_event(
+        request,
+        context,
+        action="knowledge_base.build_async",
+        resource="documents",
+        user=user,
+    )
     return {"success": True, "message": "构建任务已启动"}
 
 
 @router.get("/build-progress")
-async def build_progress_endpoint():
+async def build_progress_endpoint(user: Optional[UserIdentity] = Depends(get_current_user)):
     """获取构建进度"""
-    return _build_progress
+    return get_build_progress(get_tenant_id(user))
 
 
 @router.get("/conversations")
-async def list_conversations():
+async def list_conversations(user: Optional[UserIdentity] = Depends(get_current_user)):
     """列出所有对话历史"""
     try:
-        conv_manager = get_conversation_manager()
+        conv_manager = get_conversation_manager(get_tenant_id(user))
         conversation_ids = conv_manager.list_conversations()
         
         conversations = []
         for conv_id in conversation_ids:
             # 加载对话以获取摘要信息
             conv_manager.load_conversation(conv_id)
-            history = conv_manager.get_history(conv_id, max_messages=2)
-            
+            full_history = conv_manager.get_history(conv_id)
+            message_count = len(full_history)
+            if message_count == 0:
+                continue
+
             # 获取第一条用户消息作为标题
             title = "新对话"
-            last_time = None
-            message_count = len(conv_manager.get_history(conv_id))
-            
-            for msg in history:
+            last_time = full_history[-1].timestamp if full_history else None
+
+            for msg in full_history:
                 if msg.role == "user":
                     title = msg.content[:50] + ("..." if len(msg.content) > 50 else "")
                     break
-            
-            # 获取最后消息时间
-            full_history = conv_manager.get_history(conv_id)
-            if full_history:
-                last_time = full_history[-1].timestamp
-            
+
             conversations.append({
                 "id": conv_id,
                 "title": title,
@@ -410,10 +524,10 @@ async def list_conversations():
 
 
 @router.get("/conversations/{conversation_id}")
-async def get_conversation(conversation_id: str):
+async def get_conversation(conversation_id: str, user: Optional[UserIdentity] = Depends(get_current_user)):
     """获取单个对话的详细内容"""
     try:
-        conv_manager = get_conversation_manager()
+        conv_manager = get_conversation_manager(get_tenant_id(user))
         
         # 尝试加载对话
         if not conv_manager.load_conversation(conversation_id):
@@ -444,11 +558,23 @@ async def get_conversation(conversation_id: str):
 
 
 @router.delete("/conversations/{conversation_id}")
-async def delete_conversation(conversation_id: str):
+async def delete_conversation(
+    conversation_id: str,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """删除指定对话"""
     try:
-        conv_manager = get_conversation_manager()
+        conv_manager = get_conversation_manager(get_tenant_id(user))
         conv_manager.delete_conversation(conversation_id)
+        record_audit_event(
+            request,
+            context,
+            action="conversation.delete",
+            resource=conversation_id,
+            user=user,
+        )
         return {"success": True, "message": "对话已删除"}
     except Exception as e:
         logger.error(f"删除对话失败: {e}")
@@ -524,14 +650,28 @@ class FileSaveRequest(BaseModel):
     content: str
 
 
-@router.put("/files/{filename:path}")
-async def save_file_content(filename: str, req: FileSaveRequest):
+@router.put("/files/{filename:path}", dependencies=[Depends(require_roles("admin")), Depends(require_policy("write", "files"))])
+async def save_file_content(
+    filename: str,
+    req: FileSaveRequest,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """保存文件内容"""
     file_path = _safe_file_path(filename)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
     try:
         file_path.write_text(req.content, encoding='utf-8')
+        record_audit_event(
+            request,
+            context,
+            action="file.update",
+            resource=file_path.name,
+            user=user,
+            details={"size": len(req.content)},
+        )
         return {"success": True, "message": "文件已保存", "size": len(req.content)}
     except Exception as e:
         logger.error(f"保存文件失败: {e}")
@@ -543,8 +683,13 @@ class FileCreateRequest(BaseModel):
     content: str = ""
 
 
-@router.post("/files")
-async def create_file_endpoint(req: FileCreateRequest):
+@router.post("/files", dependencies=[Depends(require_roles("admin")), Depends(require_policy("write", "files"))])
+async def create_file_endpoint(
+    req: FileCreateRequest,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """创建新文件"""
     file_path = _safe_file_path(req.name)
     if file_path.exists():
@@ -552,20 +697,40 @@ async def create_file_endpoint(req: FileCreateRequest):
     try:
         DOCUMENTS_DIR.mkdir(exist_ok=True)
         file_path.write_text(req.content, encoding='utf-8')
+        record_audit_event(
+            request,
+            context,
+            action="file.create",
+            resource=file_path.name,
+            user=user,
+            details={"size": len(req.content)},
+        )
         return {"success": True, "message": "文件已创建", "name": file_path.name, "size": len(req.content)}
     except Exception as e:
         logger.error(f"创建文件失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/files/{filename:path}")
-async def delete_file(filename: str):
+@router.delete("/files/{filename:path}", dependencies=[Depends(require_roles("admin")), Depends(require_policy("delete", "files"))])
+async def delete_file(
+    filename: str,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """删除指定文件"""
     file_path = _safe_file_path(filename)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
     try:
         file_path.unlink()
+        record_audit_event(
+            request,
+            context,
+            action="file.delete",
+            resource=file_path.name,
+            user=user,
+        )
         return {"success": True, "message": "文件已删除"}
     except Exception as e:
         logger.error(f"删除文件失败: {e}")
@@ -576,22 +741,56 @@ async def delete_file(filename: str):
 
 
 @router.post("/query-stream")
-async def query_stream(req: QueryRequest):
+async def query_stream(
+    req: QueryRequest,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
     """流式查询知识库（SSE）"""
+    try:
+        validate_user_text(req.question)
+    except HTTPException:
+        record_audit_event(
+            request,
+            context,
+            action="query.blocked",
+            resource="query_stream",
+            user=user,
+            outcome="blocked",
+            details={"reason": "guardrail_violation"},
+        )
+        raise
+    tenant_id = get_tenant_id(user)
+    get_quota_service().ensure_allowed(tenant_id)
+    req_provider = (req.provider or Config.MODEL_PROVIDER or '').strip().lower()
+    usage = get_quota_service().record_query(
+        tenant_id,
+        question=req.question,
+        provider=req_provider,
+        estimated_output_tokens=Config.MAX_TOKENS,
+    )
+    get_webhook_service().emit(
+        "query.completed",
+        {
+            "tenant_id": tenant_id,
+            "provider": req_provider,
+            "question_preview": req.question[:120],
+            "usage": usage,
+        },
+    )
     trace_id = generate_trace_id()
     start_time = time.time()
     logger.info(f"[{trace_id}] 开始处理查询 - 问题: {req.question[:100]}..., Provider: {req.provider}")
     
-    if not load_assistant():
+    if not load_assistant(tenant_id):
         error_msg = "向量数据库未加载。请先构建或确认数据库目录。"
         async def error_generate():
             yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
         return StreamingResponse(error_generate(), media_type="text/event-stream")
     
-    req_provider = (req.provider or Config.MODEL_PROVIDER or '').strip().lower()
-    
     # 获取对话管理器并处理对话历史
-    conv_manager = get_conversation_manager()
+    conv_manager = get_conversation_manager(tenant_id)
     conversation_id = req.conversation_id
     
     # 如果没有提供会话ID，创建新会话
@@ -610,10 +809,10 @@ async def query_stream(req: QueryRequest):
         try:
             if req_provider == 'ollama':
                 try:
-                    assistant = get_assistant()
+                    assistant = get_assistant(tenant_id)
                     if assistant is None:
-                        load_assistant()
-                        assistant = get_assistant()
+                        load_assistant(tenant_id)
+                        assistant = get_assistant(tenant_id)
                     
                     logger.info(f"[Ollama] 开始检索文档...")
                     docs = assistant.retrieve_documents(
@@ -720,7 +919,7 @@ async def query_stream(req: QueryRequest):
                             yield chunk
                         
                         # 保存助手的回复到对话历史
-                        conv_manager.add_message(conversation_id, "assistant", final_text, save_to_disk=True)
+                        conv_manager.add_message(conversation_id, "assistant", sanitize_output_text(final_text), save_to_disk=True)
                         logger.info(f"[Conversation] 保存助手回复到会话 {conversation_id}")
 
                     total_elapsed = time.time() - start_time
@@ -738,10 +937,10 @@ async def query_stream(req: QueryRequest):
             elif req_provider == 'deepseek':
                 try:
                     logger.info(f"[DeepSeek] 开始处理请求")
-                    assistant = get_assistant()
+                    assistant = get_assistant(tenant_id)
                     if assistant is None:
-                        load_assistant()
-                        assistant = get_assistant()
+                        load_assistant(tenant_id)
+                        assistant = get_assistant(tenant_id)
 
                     logger.info(f"[DeepSeek] 开始检索文档...")
                     docs = assistant.retrieve_documents(
@@ -828,7 +1027,7 @@ async def query_stream(req: QueryRequest):
                             yield chunk
                         
                         # 保存助手的回复到对话历史
-                        conv_manager.add_message(conversation_id, "assistant", final_text, save_to_disk=True)
+                        conv_manager.add_message(conversation_id, "assistant", sanitize_output_text(final_text), save_to_disk=True)
                         logger.info(f"[{trace_id}] 保存助手回复到会话 {conversation_id}")
 
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -840,7 +1039,7 @@ async def query_stream(req: QueryRequest):
             else:
                 # 默认使用 RAGAssistant
                 try:
-                    assistant = get_assistant()
+                    assistant = get_assistant(tenant_id)
                     method = req.method or Config.DEFAULT_RETRIEVAL_METHOD
                     rerank = req.rerank if req.rerank is not None else Config.ENABLE_RERANK
                     top_k = req.top_k or Config.TOP_K
@@ -858,7 +1057,7 @@ async def query_stream(req: QueryRequest):
                         rerank, 
                         history if history else None
                     )
-                    answer = result.get("answer", "")
+                    answer = sanitize_output_text(result.get("answer", ""))
                     sources = [format_source(doc) for doc in result.get("sources", [])]
                     
                     # 先发送会话ID，确保前端立即获取
@@ -866,9 +1065,8 @@ async def query_stream(req: QueryRequest):
                     
                     yield f"data: {json.dumps({'type': 'sources', 'data': sources})}\n\n"
                     
-                    for char in answer:
-                        yield f"data: {json.dumps({'type': 'content', 'data': char})}\n\n"
-                        await asyncio.sleep(0.01)
+                    async for chunk in stream_text_in_chunks(answer, chunk_size=20):
+                        yield chunk
                     
                     # 保存助手的回复到对话历史
                     conv_manager.add_message(conversation_id, "assistant", answer, save_to_disk=True)
@@ -888,3 +1086,265 @@ async def query_stream(req: QueryRequest):
             yield f"data: {json.dumps({'type': 'error', 'data': f'查询处理异常: {str(e)}'})}\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.get("/admin/summary", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "metrics"))])
+async def admin_summary(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """企业管理侧最小观测摘要。"""
+    tenant_id = get_tenant_id(user)
+    summary = {
+        "request_id": context.request_id,
+        "tenant_id": tenant_id,
+        "auth": {
+            "enabled": Config.ENABLE_AUTH,
+            "current_user": user.model_dump() if user else None,
+        },
+        "build": get_build_progress(tenant_id),
+        "monitoring": monitor.get_summary(),
+        "quota": {
+            "limits": get_quota_service().limits(),
+            "usage": get_quota_service().snapshot(tenant_id).get(tenant_id),
+        },
+        "webhook": get_webhook_service().status(),
+        "security": {
+            "pii_redaction_enabled": Config.ENABLE_PII_REDACTION,
+            "abac_enabled": Config.ENABLE_ABAC,
+            "guardrails_enabled": Config.ENABLE_SECURITY_GUARDRAILS,
+            "policy_count": len(get_abac_engine().list_policies()),
+        },
+        "retention": get_retention_service().status(),
+        "audit": {
+            "enabled": True,
+            "log_path": Config.AUDIT_LOG_PATH,
+        },
+    }
+    record_audit_event(
+        request,
+        context,
+        action="admin.summary.read",
+        resource="admin_summary",
+        user=user,
+    )
+    return summary
+
+
+@router.get("/admin/audit-events", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "audit"))])
+async def admin_audit_events(
+    request: Request,
+    limit: int = 50,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """读取最近审计事件，供后续管理台接入。"""
+    events = get_audit_service().list_events(limit=limit)
+    record_audit_event(
+        request,
+        context,
+        action="admin.audit.read",
+        resource="audit_events",
+        user=user,
+        details={"limit": limit},
+    )
+    return {"events": events}
+
+
+@router.get("/admin/tenant-metrics", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "metrics"))])
+async def admin_tenant_metrics(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """查看租户级监控指标。"""
+    metrics = tenant_monitor.snapshot()
+    record_audit_event(
+        request,
+        context,
+        action="admin.metrics.read",
+        resource="tenant_metrics",
+        user=user,
+    )
+    return {"tenants": metrics}
+
+
+@router.get("/admin/metrics-prometheus", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "metrics"))], response_class=PlainTextResponse)
+async def admin_metrics_prometheus(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """Prometheus 文本格式指标。"""
+    record_audit_event(
+        request,
+        context,
+        action="admin.metrics.export",
+        resource="prometheus_metrics",
+        user=user,
+    )
+    return tenant_monitor.to_prometheus()
+
+
+@router.get("/admin/quota", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "quota"))])
+async def admin_quota(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """查看租户配额与成本估算。"""
+    data = {
+        "limits": get_quota_service().limits(),
+        "tenants": get_quota_service().snapshot(),
+    }
+    record_audit_event(
+        request,
+        context,
+        action="admin.quota.read",
+        resource="quota",
+        user=user,
+    )
+    return data
+
+
+@router.get("/admin/webhooks", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "webhook"))])
+async def admin_webhooks(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """查看 Webhook 配置与最近投递结果。"""
+    status_data = get_webhook_service().status()
+    record_audit_event(
+        request,
+        context,
+        action="admin.webhook.read",
+        resource="webhooks",
+        user=user,
+    )
+    return status_data
+
+
+@router.post("/admin/webhooks/test", dependencies=[Depends(require_roles("admin")), Depends(require_policy("admin", "webhook"))])
+async def admin_webhook_test(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """发送一条测试 Webhook 事件。"""
+    result = get_webhook_service().emit(
+        "webhook.test",
+        {
+            "tenant_id": get_tenant_id(user),
+            "actor": user.username if user else "anonymous",
+            "message": "manual webhook test",
+        },
+        async_delivery=False,
+    )
+    record_audit_event(
+        request,
+        context,
+        action="admin.webhook.test",
+        resource="webhooks",
+        user=user,
+        details={"result": result},
+    )
+    return {"result": result}
+
+
+@router.get("/admin/security", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "security"))])
+async def admin_security(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """查看 PII / ABAC 安全策略状态。"""
+    data = {
+        "pii_redaction_enabled": Config.ENABLE_PII_REDACTION,
+        "abac_enabled": Config.ENABLE_ABAC,
+        "guardrails_enabled": Config.ENABLE_SECURITY_GUARDRAILS,
+        "policies": get_abac_engine().list_policies(),
+    }
+    record_audit_event(
+        request,
+        context,
+        action="admin.security.read",
+        resource="security",
+        user=user,
+    )
+    return data
+
+
+class RetentionCleanupRequest(BaseModel):
+    tenant_id: Optional[str] = None
+    dry_run: bool = False
+
+
+@router.get("/admin/retention", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "retention"))])
+async def admin_retention_status(
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """查看数据保留策略状态。"""
+    data = get_retention_service().status()
+    record_audit_event(
+        request,
+        context,
+        action="admin.retention.read",
+        resource="retention",
+        user=user,
+    )
+    return data
+
+
+@router.post("/admin/retention/cleanup", dependencies=[Depends(require_roles("admin")), Depends(require_policy("admin", "retention"))])
+async def admin_retention_cleanup(
+    req: RetentionCleanupRequest,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """执行（或预演）数据保留清理。"""
+    tenant_id = req.tenant_id or get_tenant_id(user)
+    result = get_retention_service().cleanup(tenant_id=tenant_id, dry_run=req.dry_run)
+    record_audit_event(
+        request,
+        context,
+        action="admin.retention.cleanup",
+        resource="retention",
+        user=user,
+        details=result,
+    )
+    get_webhook_service().emit("retention.cleanup", result)
+    return result
+
+
+@router.get("/admin/compliance-export", dependencies=[Depends(require_roles("admin", "auditor")), Depends(require_policy("read", "compliance"))])
+async def admin_compliance_export(
+    request: Request,
+    tenant_id: Optional[str] = None,
+    context: RequestContext = Depends(get_request_context),
+    user: Optional[UserIdentity] = Depends(get_current_user),
+):
+    """导出当前（或指定）租户的合规数据包。"""
+    target_tenant = tenant_id or get_tenant_id(user)
+    content, filename = get_compliance_export_service().build_zip(target_tenant)
+    record_audit_event(
+        request,
+        context,
+        action="admin.compliance.export",
+        resource="compliance",
+        user=user,
+        details={"tenant_id": target_tenant, "filename": filename, "bytes": len(content)},
+    )
+    get_webhook_service().emit(
+        "compliance.exported",
+        {"tenant_id": target_tenant, "filename": filename, "bytes": len(content)},
+    )
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
