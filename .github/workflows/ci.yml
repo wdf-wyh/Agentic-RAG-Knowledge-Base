@@ -22,17 +22,17 @@ jobs:
           pip install -r requirements.txt
           pip install pytest python-jose[cryptography]
 
-      - name: Build demo knowledge base
-        run: python run_backtest.py --offline
-        env:
-          ENABLE_RERANK: "false"
-          HF_ENDPOINT: https://hf-mirror.com
+      - name: Prepare demo documents
+        run: |
+          mkdir -p documents
+          cp -r data/demo_documents/. documents/
 
       - name: Run unit tests
         run: pytest tests/unit -v --tb=short
         env:
           ENABLE_RERANK: "false"
 
+      # 离线 BM25 回测：不下载 HuggingFace 嵌入模型，避免 hf-mirror 网络失败
       - name: Run RAG backtest (offline)
         run: python run_backtest.py --offline
         env:

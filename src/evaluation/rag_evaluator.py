@@ -208,6 +208,18 @@ class RAGEvaluator:
         get_cross_encoder()
         logger.info("Rerank 模型已就绪")
 
+    @staticmethod
+    def _resolve_offline_docs_path() -> str:
+        """优先使用 documents/，CI 场景回退到已入库的 data/demo_documents/。"""
+        from pathlib import Path
+
+        primary = Path(Config.DOCUMENTS_PATH)
+        fallback = Path("data/demo_documents")
+        for candidate in (primary, fallback):
+            if candidate.is_dir() and any(candidate.iterdir()):
+                return str(candidate)
+        return str(primary)
+
     def _run_bm25_only_backtest(
         self,
         cases: List[EvalCase],
@@ -219,9 +231,12 @@ class RAGEvaluator:
         from src.core.document_processor import DocumentProcessor
         from src.core.bm25_retriever import BM25Retriever
 
-        chunks = DocumentProcessor().process_documents(Config.DOCUMENTS_PATH)
+        docs_path = self._resolve_offline_docs_path()
+        chunks = DocumentProcessor().process_documents(docs_path)
         if not chunks:
-            raise ValueError("离线回测需要 documents/ 目录有文件")
+            raise ValueError(
+                "离线回测需要 documents/ 或 data/demo_documents/ 目录有文件"
+            )
 
         all_results: Dict[str, List[Dict]] = {}
         summary: Dict[str, Dict[str, float]] = {}
@@ -283,7 +298,22 @@ class RAGEvaluator:
         rerank_options = rerank_options or [False, True]
 
         mode = "full" if self.assistant else "local"
-        if offline or self.assistant is None:
+        # --offline：直接走 BM25，避免 CI/无网环境下载 HuggingFace 嵌入模型
+        if offline:
+            partial = self._run_bm25_only_backtest(
+                cases,
+                methods=["bm25"],
+                rerank_options=[False],
+                k=k,
+            )
+            return {
+                "dataset": dataset_path,
+                "total_cases": len(cases),
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                **partial,
+            }
+
+        if self.assistant is None:
             try:
                 self.ensure_local_retriever()
                 mode = "local"
