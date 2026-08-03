@@ -798,6 +798,8 @@ class BatchImageAnalysisTool(BaseTool):
             for ext in ImageAnalysisTool.SUPPORTED_FORMATS:
                 image_paths.extend(str(p) for p in dir_path.glob(f"*{ext}"))
                 image_paths.extend(str(p) for p in dir_path.glob(f"*{ext.upper()}"))
+            # Windows 大小写不敏感时 *.jpg / *.JPG 会重复命中同一文件
+            image_paths = list(dict.fromkeys(image_paths))
         
         if not image_paths:
             return ToolResult(
